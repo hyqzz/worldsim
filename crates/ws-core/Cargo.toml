@@ -1,0 +1,10 @@
+[package]
+name = "ws-core"
+description = "WorldSim foundation: physical constants, math, deterministic RNG, hashing, JSON, Base64, SHA-1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]

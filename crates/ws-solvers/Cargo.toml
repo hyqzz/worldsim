@@ -1,0 +1,11 @@
+[package]
+name = "ws-solvers"
+description = "WorldSim physics solvers: rigid spheres, WCSPH fluid, heat field, N-body gravity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+ws-core = { path = "../ws-core" }

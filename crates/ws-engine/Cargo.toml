@@ -1,0 +1,13 @@
+[package]
+name = "ws-engine"
+description = "WorldSim simulation kernel: world orchestration, QoS control, snapshots, replay, forks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+ws-core = { path = "../ws-core" }
+ws-domain = { path = "../ws-domain" }
+ws-solvers = { path = "../ws-solvers" }

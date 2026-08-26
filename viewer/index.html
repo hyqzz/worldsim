@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WorldSim — Viewer</title>
+<link rel="stylesheet" href="/viewer/style.css">
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hud">
+  <div id="hud-title"><strong>WorldSim</strong> <span>v0.1.0</span></div>
+  <div id="hud-stats">connecting…</div>
+  <div id="hud-world"></div>
+</div>
+<div id="controls">
+  <div class="panel">
+    <button id="btn-pause">Pause</button>
+    <button id="btn-reset">Reset view</button>
+    <label>Speed <select id="sel-rate">
+      <option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+    </select></label>
+    <label>Quality <select id="sel-quality">
+      <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option>
+    </select></label>
+  </div>
+  <div class="panel">
+    <label>Spawn
+      <select id="sel-spawn">
+        <option value="steel">Steel ball</option><option value="wood">Wood ball</option><option value="rubber">Rubber ball</option><option value="fluid">Water blob</option><option value="heat">Heat source</option>
+      </select>
+    </label>
+    <button id="btn-spawn">Spawn</button>
+    <span class="hint">or click ground</span>
+  </div>
+  <div id="controls-status"></div>
+</div>
+<div id="worldbar">
+  <select id="sel-world"></select>
+  <button id="btn-create">Create demo world</button>
+</div>
+<script type="module" src="/viewer/app.js"></script>
+</body>
+</html>

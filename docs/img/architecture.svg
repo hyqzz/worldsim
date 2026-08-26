@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="420" viewBox="0 0 880 420">
+<rect width="880" height="420" rx="16" fill="#0b0f17"/>
+<g font-family="system-ui, -apple-system, sans-serif">
+  <text x="24" y="34" fill="#8ea2c8" font-size="12" letter-spacing="0.08em">WORLDSIM — PHYSICS WORLD OS</text>
+  <text x="24" y="56" fill="#e6eef8" font-size="18" font-weight="700">Constants → Laws → State → Streams</text>
+  <!-- layers -->
+  <g transform="translate(24,78)">
+    <!-- constants -->
+    <rect x="0" y="0" width="160" height="68" rx="10" fill="#111c33" stroke="#1e2e55"/>
+    <text x="12" y="20" fill="#7aa1ff" font-size="11" font-weight="600">CONSTANTS</text>
+    <text x="12" y="36" fill="#c8d6f0" font-size="11">CODATA 2022</text>
+    <text x="12" y="50" fill="#8ea2c8" font-size="10">c · ħ · G · e · kB</text>
+    <!-- laws -->
+    <rect x="184" y="0" width="170" height="68" rx="10" fill="#111c33" stroke="#1e2e55"/>
+    <text x="196" y="20" fill="#7aa1ff" font-size="11" font-weight="600">LAWS (PLUGINS)</text>
+    <text x="196" y="36" fill="#c8d6f0" font-size="11">Force · Flux · Constraint</text>
+    <text x="196" y="50" fill="#8ea2c8" font-size="10">pluggable, validated</text>
+    <!-- state triad -->
+    <rect x="378" y="0" width="220" height="68" rx="10" fill="#0f2a4a" stroke="#23406e"/>
+    <text x="390" y="20" fill="#7ad0ff" font-size="11" font-weight="600">STATE  Particles × Fields × Links</text>
+    <text x="390" y="36" fill="#c8d6f0" font-size="11">SoA buffers · AABB bounds</text>
+    <text x="390" y="50" fill="#8ea2c8" font-size="10">snapshot · hash · fork</text>
+    <!-- engine -->
+    <rect x="622" y="0" width="210" height="68" rx="10" fill="#14233d" stroke="#1e2e55"/>
+    <text x="634" y="20" fill="#7aa1ff" font-size="11" font-weight="600">KERNEL</text>
+    <text x="634" y="36" fill="#c8d6f0" font-size="11">fixed-step · substeps</text>
+    <text x="634" y="50" fill="#8ea2c8" font-size="10">QoS budget → LOD</text>
+  </g>
+  <!-- second row -->
+  <g transform="translate(24,162)">
+    <rect x="0" y="0" width="272" height="78" rx="10" fill="#111c33" stroke="#1e2e55"/>
+    <text x="12" y="20" fill="#7aa1ff" font-size="11" font-weight="600">SOLVERS (v0.1)</text>
+    <text x="12" y="36" fill="#c8d6f0" font-size="11">Rigid spheres · WCSPH fluid</text>
+    <text x="12" y="52" fill="#c8d6f0" font-size="11">Heat grid · N-body (KDK)</text>
+    <text x="12" y="66" fill="#8ea2c8" font-size="10">deterministic · symplectic</text>
+    <rect x="296" y="0" width="260" height="78" rx="10" fill="#111c33" stroke="#1e2e55"/>
+    <text x="308" y="20" fill="#7aa1ff" font-size="11" font-weight="600">STREAMS &amp; CONTROL</text>
+    <text x="308" y="36" fill="#c8d6f0" font-size="11">REST · WebSocket · SSE</text>
+    <text x="308" y="52" fill="#c8d6f0" font-size="11">snapshots · replay · fork</text>
+    <text x="308" y="66" fill="#8ea2c8" font-size="10">single-binary server</text>
+    <rect x="580" y="0" width="252" height="78" rx="10" fill="#0f2436" stroke="#1d3550"/>
+    <text x="592" y="20" fill="#7ad0ff" font-size="11" font-weight="600">VIEWER</text>
+    <text x="592" y="36" fill="#c8d6f0" font-size="11">WebGL2 point sprites</text>
+    <text x="592" y="52" fill="#c8d6f0" font-size="11">orbit · HUD · WS live</text>
+    <text x="592" y="66" fill="#8ea2c8" font-size="10">vanilla JS, no deps</text>
+  </g>
+  <!-- arrows -->
+  <g stroke="#2a3f6b" stroke-width="1.2" fill="none" marker-end="url(#a)">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2a3f6b"/></marker></defs>
+    <path d="M 184 112 L 184 148"/><path d="M 368 112 L 444 148"/><path d="M 622 112 L 548 148"/>
+    <path d="M 272 200 L 296 200"/><path d="M 556 200 L 580 200"/>
+  </g>
+  <!-- QoS callout -->
+  <g transform="translate(24,268)">
+    <rect x="0" y="0" width="832" height="54" rx="10" fill="#0e1a2e" stroke="#1e2e55"/>
+    <text x="14" y="20" fill="#7aa1ff" font-size="11" font-weight="600">PRECISION AS A SERVICE</text>
+    <text x="14" y="36" fill="#c8d6f0" font-size="11">Quality Low → Medium → High  ·  budget_ms per tick  ·  auto hysteresis  ·  stream stride  ·  attention-ready (roadmap: per-region octree)</text>
+  </g>
+  <!-- footer -->
+  <g transform="translate(24,350)">
+    <text x="0" y="0" fill="#8ea2c8" font-size="10">ZERO RUNTIME DEPS  ·  DETERMINISTIC REPLAY  ·  FORK WORLDS  ·  PROBE ANY POINT  ·  PHYSICS-VALIDATED CI</text>
+    <text x="0" y="16" fill="#5b6b8a" font-size="9">cargo test --workspace  validates projectile, orbit, heat diffusion, fluid settlement, determinism, snapshots, forks — every commit.</text>
+  </g>
+</g>
+</svg>

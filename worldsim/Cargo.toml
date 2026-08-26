@@ -1,0 +1,18 @@
+[package]
+name = "worldsim"
+description = "WorldSim: physics-world simulation infrastructure platform (server binary)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "worldsim"
+path = "src/main.rs"
+
+[dependencies]
+ws-core = { path = "../crates/ws-core" }
+ws-domain = { path = "../crates/ws-domain" }
+ws-engine = { path = "../crates/ws-engine" }
+ws-server = { path = "../crates/ws-server" }

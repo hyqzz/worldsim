@@ -1,0 +1,11 @@
+[package]
+name = "ws-domain"
+description = "WorldSim domain model: configuration, materials, simulation events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+ws-core = { path = "../ws-core" }
