@@ -17,6 +17,7 @@
 
 pub mod fluid;
 pub mod heat;
+pub mod law;
 pub mod nbody;
 pub mod rigid;
 pub mod spatial;

@@ -14,6 +14,8 @@ use ws_core::math::Vec3;
 
 use ws_domain::config::{Quality, WorldConfig};
 use ws_domain::events::parse_event_batch;
+use ws_domain::wdl::Wdl;
+use ws_engine::batch;
 use ws_engine::world::World;
 
 use crate::http::{self, Request, Response};
@@ -190,6 +192,12 @@ fn dispatch(req: &Request, state: &AppState)->Response{
 
     // API
     let path=&req.path;
+    // Batch & WDL (final form)
+    if req.method=="POST" && path=="/v1/batch/create"{ return handle_batch_create(req, state); }
+    if req.method=="POST" && path=="/v1/batch/step"{ return handle_batch_step(req, state); }
+    if req.method=="POST" && path=="/v1/batch/inject"{ return handle_batch_inject(req, state); }
+    if req.method=="POST" && path=="/v1/worlds/from-wdl"{ return handle_create_from_wdl(req, state); }
+    if req.method=="POST" && path=="/v1/wdl/parse"{ return handle_wdl_parse(req); }
     // POST /v1/worlds
     if req.method=="POST" && path=="/v1/worlds"{
         return handle_create_world(req, state);
@@ -458,6 +466,99 @@ fn handle_fork(wid: &str, req: &Request, state: &AppState)->Response{
     state.worlds.lock().unwrap().insert(new_id.clone(), Arc::new(Mutex::new(child)));
     state.snapshots.lock().unwrap().insert(new_id.clone(), HashMap::new());
     json_created(&Json::obj(vec![("id", Json::str(new_id)),("world", summary)]))
+}
+
+// ---------- Batch API (final form: training & multi-env) ----------
+
+/// POST /v1/batch/create {template_config, count, name_prefix}
+fn handle_batch_create(req: &Request, state: &AppState)->Response{
+    let body=match parse_body_json(req){ Ok(j)=>j, Err(e)=> return json_error(400,"bad_json",&e)};
+    let count=body.get("count").and_then(|j| j.as_u64()).filter(|&c| (1..=65536).contains(&c)).unwrap_or(4);
+    let cfg_json=body.get("template_config").or_else(|| body.get("config")).unwrap_or(&Json::Null);
+    let cfg=match WorldConfig::from_json(cfg_json){ Ok(c)=>c, Err(e)=> return json_error(400,"bad_config",&e) };
+    let prefix=body.get("name_prefix").and_then(|j| j.as_str()).unwrap_or("env").to_string();
+    let worlds=batch::create_batch(&cfg, count as usize, &prefix);
+    let mut ids=Vec::with_capacity(count as usize);
+    {
+        let mut wm=state.worlds.lock().unwrap();
+        let mut sm=state.snapshots.lock().unwrap();
+        for w in worlds{
+            let id={ let g=w.lock().unwrap(); g.id.clone() };
+            ids.push(id.clone());
+            sm.insert(id.clone(), HashMap::new());
+            wm.insert(id, w);
+        }
+    }
+    json_created(&Json::obj(vec![("count", Json::num(ids.len() as f64)), ("ids", Json::arr(ids.into_iter().map(|id| Json::str(id)).collect()))]))
+}
+
+/// POST /v1/batch/step {ids, ticks_per_world}
+fn handle_batch_step(req: &Request, state: &AppState)->Response{
+    let body=match parse_body_json(req){ Ok(j)=>j, Err(e)=> return json_error(400,"bad_json",&e)};
+    let ticks=body.get("ticks_per_world").and_then(|j| j.as_u64()).unwrap_or(1) as usize;
+    let id_arr: Vec<String> = body.get("ids").and_then(|j| j.as_arr()).map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+    if id_arr.is_empty() { return json_error(400,"bad_request","ids array required"); }
+    {
+        let wm=state.worlds.lock().unwrap();
+        let ws: Vec<Arc<Mutex<World>>> = id_arr.iter().filter_map(|id| wm.get(id).cloned()).collect();
+        if ws.len()!=id_arr.len() { return json_error(404,"world_not_found","one or more world ids not found"); }
+        let results=batch::batch_step(&ws, ticks);
+        let result_json: Vec<Json> = results.into_iter().map(|r| Json::obj(vec![
+            ("id", Json::str(r.id)),
+            ("tick", Json::num(r.tick as f64)),
+            ("time", Json::num(r.time)),
+            ("hash", Json::str(r.hash)),
+            ("tick_ms", Json::num(r.tick_ms)),
+            ("bodies", Json::num(r.bodies as f64)),
+            ("fluid", Json::num(r.fluid as f64)),
+        ])).collect();
+        json_ok(&Json::obj(vec![
+            ("count", Json::num(result_json.len() as f64)),
+            ("results", Json::arr(result_json)),
+        ]))
+    }
+}
+
+/// POST /v1/batch/inject {ids, events}
+fn handle_batch_inject(req: &Request, state: &AppState)->Response{
+    let body=match parse_body_json(req){ Ok(j)=>j, Err(e)=> return json_error(400,"bad_json",&e)};
+    let events=match body.get("events").and_then(|j| j.as_arr()).map(|a| { let arr: Vec<Json> = a.to_vec(); parse_event_batch(&Json::Arr(arr)) }).unwrap_or(Ok(vec![])){ Ok(v)=>v, Err(e)=> return json_error(400,"bad_events",&e)};
+    let id_arr: Vec<String> = body.get("ids").and_then(|j| j.as_arr()).map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+    let wm=state.worlds.lock().unwrap();
+    let mut accepted=0u64;
+    for id in &id_arr{
+        if let Some(w)=wm.get(id){ w.lock().unwrap().enqueue_events(events.clone()); accepted+=1; }
+    }
+    json_ok(&Json::obj(vec![("accepted_worlds", Json::num(accepted as f64)),("total_events", Json::num((accepted * events.len() as u64) as f64))]))
+}
+
+/// POST /v1/worlds/from-wdl {wdl: "...yaml..."} or {wdl_file: "..."}
+fn handle_create_from_wdl(req: &Request, state: &AppState)->Response{
+    let body=match parse_body_json(req){ Ok(j)=>j, Err(e)=> return json_error(400,"bad_json",&e)};
+    let src=match body.get("wdl").and_then(|j| j.as_str()){ Some(s)=>s.to_string(), None=> return json_error(400,"bad_request","wdl string required") };
+    let wdl=match Wdl::parse(&src){ Ok(w)=>w, Err(e)=> return json_error(400,"wdl_parse_error",&e) };
+    let id=state.next_world_id();
+    let mut world=World::new(id.clone(), wdl.config, wdl.name);
+    // Enqueue initial events
+    if !wdl.events.is_empty(){ world.enqueue_events(wdl.events); }
+    let summary=world_summary(&world);
+    state.worlds.lock().unwrap().insert(id.clone(), Arc::new(Mutex::new(world)));
+    state.snapshots.lock().unwrap().insert(id.clone(), HashMap::new());
+    json_created(&Json::obj(vec![("id", Json::str(id)),("world", summary)]))
+}
+
+/// POST /v1/wdl/parse {wdl: "..."}
+fn handle_wdl_parse(req: &Request)->Response{
+    let body=match parse_body_json(req){ Ok(j)=>j, Err(e)=> return json_error(400,"bad_json",&e)};
+    let src=match body.get("wdl").and_then(|j| j.as_str()){ Some(s)=>s.to_string(), None=> return json_error(400,"bad_request","wdl string required") };
+    match Wdl::parse(&src){
+        Ok(wdl)=> json_ok(&Json::obj(vec![
+            ("config", wdl.config.to_json()),
+            ("name", wdl.name.as_deref().map(|s| Json::str(s.to_string())).unwrap_or(Json::Null)),
+            ("events", Json::arr(wdl.events.iter().map(|e| e.to_json()).collect())),
+        ])),
+        Err(e)=> json_error(400,"wdl_parse_error",&e),
+    }
 }
 
 // ---------- WebSocket / SSE upgrade handlers ----------

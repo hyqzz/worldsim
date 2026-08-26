@@ -23,6 +23,9 @@ pub enum TargetRef {
 pub enum SimEvent {
     /// Spawn a dynamic sphere.
     SpawnSphere { material: String, pos: Vec3, vel: Vec3, radius: f64 },
+    /// Spawn a capsule (line segment + hemispherical caps). v0.1 executes as
+    /// a sphere of equivalent volume for throughput; v0.2 will use true segment distance.
+    SpawnCapsule { material: String, pos: Vec3, vel: Vec3, radius: f64, half_height: f64 },
     /// Fill a sphere of space with fluid particles at rest-density lattice spacing.
     SpawnFluidBlob { center: Vec3, radius: f64 },
     /// Add a volumetric heat source. `duration_ticks == 0` means persistent.
@@ -87,6 +90,19 @@ impl SimEvent {
                 }
                 Ok(SimEvent::SpawnFluidBlob { center: pos("center")?, radius: r })
             }
+            "spawn_capsule" => Ok(SimEvent::SpawnCapsule {
+                material: v.get("material").and_then(|j| j.as_str()).unwrap_or(crate::materials::DEFAULT_MATERIAL).to_string(),
+                pos: pos("pos")?,
+                vel: v.get("vel").and_then(|j| j.as_vec3()).unwrap_or(Vec3::zero()),
+                radius: {
+                    let r = num("radius")?;
+                    if !(1e-4..10.0).contains(&r) { return Err("event.radius out of range".into()); } r
+                },
+                half_height: {
+                    let h = v.get("half_height").or_else(|| v.get("height")).and_then(|j| j.as_f64()).unwrap_or(0.2);
+                    if !(0.0..10.0).contains(&h) { return Err("event.half_height out of range".into()); } h
+                },
+            }),
             "heat_source" => Ok(SimEvent::HeatSource {
                 pos: pos("pos")?,
                 radius: num("radius")?.clamp(0.01, 50.0),
@@ -130,6 +146,14 @@ impl SimEvent {
                 ("type", Json::str("spawn_fluid")),
                 ("center", vec3_json_pub(*center)),
                 ("radius", Json::num(*radius)),
+            ]),
+            SimEvent::SpawnCapsule { material, pos, vel, radius, half_height } => Json::obj(vec![
+                ("type", Json::str("spawn_capsule")),
+                ("material", Json::str(material.clone())),
+                ("pos", vec3_json_pub(*pos)),
+                ("vel", vec3_json_pub(*vel)),
+                ("radius", Json::num(*radius)),
+                ("half_height", Json::num(*half_height)),
             ]),
             SimEvent::HeatSource { pos, radius, power_w, duration_ticks } => Json::obj(vec![
                 ("type", Json::str("heat_source")),

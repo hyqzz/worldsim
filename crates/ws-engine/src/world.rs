@@ -148,6 +148,17 @@ impl World {
                 self.rigid.spawn(pos, vel, radius, density, rest, mat_id)?;
                 Ok(())
             }
+            SimEvent::SpawnCapsule{material, pos, vel, radius, half_height}=>{
+                // v0.1: capsule approximated as volume-equivalent sphere for throughput;
+                // true segment-distance capsule lands in v0.2 (law registry).
+                let density=material_density(&material);
+                let mat_id=material_palette_index(&material);
+                let rest=self.config.systems.rigid.restitution;
+                let vol_capsule = std::f64::consts::PI * radius*radius * (2.0*half_height + 4.0/3.0*radius);
+                let eq_radius = ((3.0*vol_capsule)/(4.0*std::f64::consts::PI)).powf(1.0/3.0);
+                self.rigid.spawn(pos, vel, eq_radius.clamp(0.02, 2.0), density, rest, mat_id)?;
+                Ok(())
+            }
             SimEvent::SpawnFluidBlob{center, radius}=>{
                 let limits=self.qos.limits();
                 let free=limits.max_fluid_particles.saturating_sub(self.fluid.n);

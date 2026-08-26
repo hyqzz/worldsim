@@ -11,6 +11,7 @@
 //!
 //! The kernel knows nothing about networking or rendering.
 
+pub mod batch;
 pub mod qos;
 pub mod snapshot;
 pub mod world;
