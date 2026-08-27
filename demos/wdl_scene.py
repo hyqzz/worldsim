@@ -1,128 +1,86 @@
 #!/usr/bin/env python3
-"""
-Demo 9: WDL — 声明式场景描述
-================================================
+"""Demo 9: WDL — declarative world description and live creation."""
+import sys
+import os
+import json
 
-演示功能:
-- 用 JSON (WDL 格式) 描述一个完整世界
-- 解析 WDL → 自动创建世界和实体
-- 展示 WDL 语法
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "sdk", "python"))
 
-输出:
-- output/wdl_scene.png — WDL 语法展示 + 解析结果
-
-运行:
-    python demos/wdl_scene.py
-"""
-import sys, os, json, time
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
 
 def run_demo(port=18099):
     from demos.viz import ensure_server, OUTPUT_DIR
-
-    print("=== Demo 9: WDL 声明式场景描述 ===")
-    c = ensure_server(port)
-    base = f"http://127.0.0.1:{port}"
-
-    # Define a scene in WDL format
-    wdl_doc = {
-        "world": {
-            "seed": 42,
-            "quality": "medium",
-            "bounds": {"min": [-2, 0, -2], "max": [2, 4, 2]},
-            "gravity": [0, -9.81, 0],
-            "container": True
-        },
-        "entities": [
-            {"pool": {"material": "water", "shape": "fluid", "at": [0, 0.8, 0], "radius": 0.6}},
-            {"wood_ball": {"material": "wood", "shape": "sphere[r=0.15]", "at": [0.5, 2.5, 0]}},
-            {"steel_ball": {"material": "steel", "shape": "sphere[r=0.12]", "at": [-0.5, 2.5, 0]}},
-        ],
-        "laws": ["gravity", "navier-stokes", "heat-transfer"]
-    }
-    print(f"\n  WDL document:")
-    print(json.dumps(wdl_doc, indent=2)[:500] + "...")
-
-    # Parse via API
-    result = json.loads(os.popen(
-        f'curl -s -X POST {base}/v1/wdl/parse '
-        f'-H "Content-Type: application/json" '
-        f"-d '{json.dumps({\"wdl\": json.dumps(wdl_doc)})}'"
-    ).read())
-
-    print(f"\n  Parsed result:")
-    print(f"    Config seed:  {result['config']['seed']}")
-    print(f"    Config quality: {result['config']['quality']}")
-    print(f"    Events generated: {len(result['events'])}")
-    for ev in result["events"]:
-        print(f"      - {ev.get('type', '?')}: {ev}")
-
-    # Create world from WDL
-    create_result = json.loads(os.popen(
-        f'curl -s -X POST {base}/v1/worlds/from-wdl '
-        f'-H "Content-Type: application/json" '
-        f"-d '{json.dumps({\"wdl\": json.dumps(wdl_doc)})}'"
-    ).read())
-    wid = create_result["id"]
-    print(f"\n  Created world from WDL: {wid}")
-
-    # Step a few times to show it's running
-    for _ in range(30):
-        c.control(wid, "step")
-    state = c.state(wid)
-    print(f"  After 30 ticks: bodies={state['bodies']}, fluid={state['fluid']}")
-
-    # Create visualization
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7), facecolor="#0b0f17")
+    print("=== Demo 9: WDL — declarative scene description ===")
+    client = ensure_server(port)
 
-    for ax in [ax1, ax2]:
+    wdl_document = {
+        "world": {
+            "seed": 42,
+            "auto_start": False,
+            "quality": "low",
+            "bounds": {"min": [-2, 0, -2], "max": [2, 4, 2]},
+            "gravity": [0, -9.81, 0],
+            "container": True,
+        },
+        "entities": [
+            {"pool": {"material": "water", "shape": "fluid", "at": [0, 0.8, 0], "radius": 0.45}},
+            {"wood_ball": {"material": "wood", "shape": "sphere[r=0.15]", "at": [0.5, 2.5, 0]}},
+            {"steel_ball": {"material": "steel", "shape": "sphere[r=0.12]", "at": [-0.5, 2.5, 0]}},
+        ],
+        "laws": ["gravity", "navier-stokes", "heat-transfer"],
+    }
+    wdl_text = json.dumps(wdl_document, indent=2)
+    parsed = client.parse_wdl(wdl_text)
+    print(f"  Parsed seed={parsed['config']['seed']} events={len(parsed['events'])}")
+
+    created = client.create_world_from_wdl(wdl_text)
+    wid = created["id"]
+    # WDL explicitly creates a manual world; step it synchronously.
+    client.control(wid, "flush")
+    result = client.step_sync(wid, ticks=20, include_fluid=False)
+    state = result["state"]
+    print(f"  Created {wid}: tick={state['tick']} bodies={state['bodies']} fluid={state['fluid']}")
+
+    fig, (source_ax, result_ax) = plt.subplots(1, 2, figsize=(16, 7), facecolor="#0b0f17")
+    for ax in (source_ax, result_ax):
         ax.set_facecolor("#0f1a30")
+        ax.axis("off")
         for spine in ax.spines.values():
             spine.set_color("#1f2a44")
-
-    # Left: WDL source code
-    ax1.set_title("WDL Source", color="#e6eef8", fontsize=12)
-    wdl_text = json.dumps(wdl_doc, indent=2)
-    ax1.text(0.05, 0.95, wdl_text, transform=ax1.transAxes,
-            color="#c8d6f0", fontsize=7.5, va="top", fontfamily="monospace",
-            bbox=dict(boxstyle="round", facecolor="#0a1428", edgecolor="#1f2a44"))
-
-    # Right: parsed result
-    ax2.set_title("Parsed → World Created", color="#e6eef8", fontsize=12)
+    source_ax.set_title("WDL source", color="#e6eef8", fontsize=12)
+    source_ax.text(0.03, 0.98, wdl_text, transform=source_ax.transAxes,
+                   color="#c8d6f0", fontsize=7, va="top", family="monospace",
+                   bbox=dict(boxstyle="round", facecolor="#0a1428", edgecolor="#1f2a44"))
+    result_ax.set_title("Parsed → executable world", color="#e6eef8", fontsize=12)
     result_text = (
-        f"seed:     {result['config']['seed']}\n"
-        f"quality:  {result['config']['quality']}\n"
-        f"bounds:   {result['config']['bounds']}\n"
-        f"gravity:  {result['config']['gravity']}\n"
-        f"container: {result['config'].get('container', True)}\n"
-        f"\nEvents auto-generated:\n"
+        f"config.seed       {parsed['config']['seed']}\n"
+        f"config.auto_start {parsed['config']['auto_start']}\n"
+        f"config.quality    {parsed['config']['quality']}\n"
+        f"generated events  {len(parsed['events'])}\n\n"
+        f"world id          {wid}\n"
+        f"tick              {state['tick']}\n"
+        f"rigid bodies      {state['bodies']}\n"
+        f"fluid particles   {state['fluid']}\n\n"
+        "One document → one reproducible world"
     )
-    for ev in result["events"]:
-        t = ev.get("type", "?")
-        pos = ev.get("pos", ev.get("center", []))
-        result_text += f"  • {t}: pos={pos}\n"
-
-    result_text += f"\nWorld ID: {wid}\n"
-    result_text += f"Tick: {state['tick']}  Bodies: {state['bodies']}  Fluid: {state['fluid']}\n"
-    result_text += f"\nOne document → full world"
-
-    ax2.text(0.05, 0.95, result_text, transform=ax2.transAxes,
-            color="#c8d6f0", fontsize=9, va="top", fontfamily="monospace",
-            bbox=dict(boxstyle="round", facecolor="#0a1428", edgecolor="#1f2a44"))
-
-    fig.suptitle("WDL — World Description Language",
-                color="#8ea2c8", fontsize=14, y=0.02)
-
+    result_ax.text(0.08, 0.92, result_text, transform=result_ax.transAxes,
+                   color="#c8d6f0", fontsize=11, va="top", family="monospace",
+                   bbox=dict(boxstyle="round", facecolor="#0a1428", edgecolor="#1f2a44"))
+    fig.suptitle("WorldSim WDL — declare once, run through any client", color="#8ea2c8", fontsize=14)
     path = OUTPUT_DIR / "wdl_scene.png"
     fig.savefig(str(path), dpi=120, bbox_inches="tight", facecolor="#0b0f17")
-    print(f"\n  ✓ Saved: {path}")
     plt.close(fig)
+    print(f"  ✓ Saved: {path}")
+    client.delete_world(wid)
 
-    c.delete_world(wid)
 
 if __name__ == "__main__":
-    run_demo()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=18099)
+    run_demo(parser.parse_args().port)

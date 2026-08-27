@@ -35,12 +35,14 @@ def ensure_server(port=18099):
     except Exception:
         pass
     # Start server
-    bin_path = Path(__file__).parent.parent / "target" / "release" / "worldsim"
+    root = Path(__file__).parent.parent
+    candidates = [root / "target" / "release" / "worldsim.exe", root / "target" / "release" / "worldsim"]
+    bin_path = next((p for p in candidates if p.exists()), candidates[0])
     if not bin_path.exists():
-        print(f"  Building worldsim binary...")
+        print("  Building worldsim binary...")
         subprocess.run(["cargo", "build", "-p", "worldsim", "--release"],
-                       cwd=str(Path(__file__).parent.parent), check=True,
-                       capture_output=True)
+                       cwd=str(root), check=True)
+        bin_path = next((p for p in candidates if p.exists()), candidates[0])
     proc = subprocess.Popen(
         [str(bin_path), "serve", "--port", str(port)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -195,28 +197,58 @@ def save_png(fig_or_path, output_path):
     print(f"  ✓ Saved: {output_path}")
 
 
+def extract_observation(client, world_id, include_fluid=False, include_fields=False, fluid_stride=1):
+    """Fetch and decode a current columnar observation for plotting.
+
+    The server uses Base64 little-endian f64 columns so this helper exercises
+    the same public data path as a scientific or training client.
+    """
+    payload = client.state_full(world_id, include_fluid=include_fluid,
+                                include_fields=include_fields,
+                                fluid_stride=fluid_stride)
+    decode = client.decode_f64_array
+    bodies = payload.get("bodies") or {}
+    result = {
+        "tick": payload.get("tick", 0),
+        "time": payload.get("time", 0),
+        "bx": decode(bodies.get("px", "")),
+        "by": decode(bodies.get("py", "")),
+        "bz": decode(bodies.get("pz", "")),
+        "bvx": decode(bodies.get("vx", "")),
+        "bvy": decode(bodies.get("vy", "")),
+        "bvz": decode(bodies.get("vz", "")),
+        "br": decode(bodies.get("r", "")),
+    }
+    if include_fluid and isinstance(payload.get("fluid"), dict):
+        fluid = payload["fluid"]
+        result.update({
+            "fx": decode(fluid.get("px", "")),
+            "fy": decode(fluid.get("py", "")),
+            "fz": decode(fluid.get("pz", "")),
+            "fvx": decode(fluid.get("vx", "")),
+            "fvy": decode(fluid.get("vy", "")),
+            "fvz": decode(fluid.get("vz", "")),
+            "frho": decode(fluid.get("rho", "")),
+        })
+        result["speed"] = np.sqrt(result["fvx"]**2 + result["fvy"]**2 + result["fvz"]**2)
+    if include_fields and isinstance(payload.get("fields"), dict):
+        fields = payload["fields"]
+        result.update({
+            "T": decode(fields.get("temperature", "")),
+            "nx": int(fields.get("nx", 0)),
+            "ny": int(fields.get("ny", 0)),
+            "nz": int(fields.get("nz", 0)),
+        })
+    return result
+
+
 def extract_state(client, world_id, bounds):
-    """Extract current state for plotting."""
-    import urllib.request
-    base = client.base_url
-    wid = world_id
-
-    # Get state
-    state = json.loads(urllib.request.urlopen(f"{base}/v1/worlds/{wid}/state").read())
-
-    # Parse fluid particles from state
-    fluid_n = state.get("fluid", 0)
-    bodies = state.get("bodies", 0)
-
-    # We'll use probe + direct state for plotting
-    # For body positions, we need to probe or use state hash
-    # In v0.1, state doesn't expose per-body arrays via JSON
-    # We'll use a workaround: create a second world and snapshot it
-
+    """Backward-compatible compact state summary."""
+    state = client.state(world_id)
     return {
         "tick": state.get("tick", 0),
         "time": state.get("time", 0),
-        "fluid_n": fluid_n,
-        "bodies": bodies,
+        "fluid_n": state.get("fluid", 0),
+        "bodies": state.get("bodies", 0),
         "bounds": bounds,
     }

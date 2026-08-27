@@ -1,5 +1,7 @@
+#![allow(clippy::field_reassign_with_default)]
+
 use ws_core::math::Vec3;
-use ws_domain::config::{WorldConfig, Quality};
+use ws_domain::config::{Quality, WorldConfig};
 use ws_engine::world::World;
 
 /// Helper: create a zero-fluid, zero-heat world suitable for pure rigid tests.
@@ -9,7 +11,9 @@ fn minimal_world(seed: u64, gravity: Vec3, bounds: Option<ws_core::math::Aabb>) 
     cfg.quality = Quality::Low; // fast
     cfg.container = false;
     cfg.gravity = gravity;
-    if let Some(b) = bounds { cfg.bounds = b; }
+    if let Some(b) = bounds {
+        cfg.bounds = b;
+    }
     cfg.systems.fluid.enabled = false;
     cfg.systems.heat.enabled = false;
     cfg.systems.nbody.enabled = false;
@@ -31,7 +35,9 @@ fn projectile_analytic_no_drag() {
     let g = -9.80665;
     let dt = world.config.dt;
     let steps = (2.0 / dt) as usize; // 2 s
-    for _ in 0..steps { assert!(world.step_tick()); }
+    for _ in 0..steps {
+        assert!(world.step_tick());
+    }
 
     let t = 2.0;
     let expect_x = pos0.x + vel0.x * t;
@@ -64,9 +70,15 @@ fn circular_orbit_energy_is_conserved() {
     let m = 1.0e10;
     let d = 2.0;
     let v = (gm * m / (2.0 * d)).sqrt(); // circular speed for equal masses around CoM
-    // Symmetric placement around origin
-    world.nbody.add_body(m, Vec3::new(-d / 2.0, 0.0, 0.0), Vec3::new(0.0, v, 0.0)).unwrap();
-    world.nbody.add_body(m, Vec3::new(d / 2.0, 0.0, 0.0), Vec3::new(0.0, -v, 0.0)).unwrap();
+                                         // Symmetric placement around origin
+    world
+        .nbody
+        .add_body(m, Vec3::new(-d / 2.0, 0.0, 0.0), Vec3::new(0.0, v, 0.0))
+        .unwrap();
+    world
+        .nbody
+        .add_body(m, Vec3::new(d / 2.0, 0.0, 0.0), Vec3::new(0.0, -v, 0.0))
+        .unwrap();
 
     let e0 = world.nbody.total_energy();
     let period = world.nbody.orbital_period_two_body(0, 1).unwrap();
@@ -81,7 +93,10 @@ fn circular_orbit_energy_is_conserved() {
 
     // Radius stability: distance from origin for each body should stay within 5% of d/2.
     for i in 0..world.nbody.n {
-        let r = (world.nbody.px[i] * world.nbody.px[i] + world.nbody.py[i] * world.nbody.py[i] + world.nbody.pz[i] * world.nbody.pz[i]).sqrt();
+        let r = (world.nbody.px[i] * world.nbody.px[i]
+            + world.nbody.py[i] * world.nbody.py[i]
+            + world.nbody.pz[i] * world.nbody.pz[i])
+            .sqrt();
         let rel = ((r - d / 2.0) / (d / 2.0)).abs();
         assert!(rel < 0.05, "body {i} radius drift {rel} r={r}");
     }
@@ -129,16 +144,25 @@ fn heat_1d_cosine_decay() {
     }
     // Analytic: amplitude decays as exp(-α π² t / L²)
     let alpha = world.heat.alpha;
-    let expected_amp = amp * (-alpha * std::f64::consts::PI * std::f64::consts::PI * probed_t / (l * l)).exp();
+    let expected_amp =
+        amp * (-alpha * std::f64::consts::PI * std::f64::consts::PI * probed_t / (l * l)).exp();
     let mid_x = 0.0;
     let sampled = world.heat.sample(Vec3::new(mid_x, 0.0, 0.0));
     // At x=0, cos(pi*1/2)=0 → T should be ~t0 for all t (node). Check average near node stays near t0.
-    assert!((sampled - t0).abs() < 2.0, "mid-node temperature {sampled} vs {t0}");
-    let crest = world.heat.sample(Vec3::new(-1.0 + world.heat.dx * 0.5, 0.0, 0.0));
+    assert!(
+        (sampled - t0).abs() < 2.0,
+        "mid-node temperature {sampled} vs {t0}"
+    );
+    let crest = world
+        .heat
+        .sample(Vec3::new(-1.0 + world.heat.dx * 0.5, 0.0, 0.0));
     let expected_crest = t0 + expected_amp;
     let rel = ((crest - expected_crest) / expected_crest).abs();
     // Explicit diffusion is first-order in time for this Δt, so we allow 4% relative tolerance at medium resolution.
-    assert!(rel < 0.05, "heat crest {crest} vs expected {expected_crest} rel {rel} alpha={alpha}");
+    assert!(
+        rel < 0.05,
+        "heat crest {crest} vs expected {expected_crest} rel {rel} alpha={alpha}"
+    );
 }
 
 #[test]
@@ -158,7 +182,12 @@ fn fluid_tank_settles_and_conserves_mass() {
     // Smaller blob for CI speed (≈ 500–900 particles, not 10k).
     let added = {
         let mut rng = ws_core::rng::Rng::new(99, ws_core::rng::STREAM_FLUID_JITTER);
-        world.fluid.spawn_blob(Vec3::new(0.0, 0.85, 0.0), 0.62, world.fluid.h * 0.08, &mut rng)
+        world.fluid.spawn_blob(
+            Vec3::new(0.0, 0.85, 0.0),
+            0.62,
+            world.fluid.h * 0.08,
+            &mut rng,
+        )
     };
     assert!(added > 80, "too few fluid particles {added}");
     let mass0 = world.fluid.total_mass();
@@ -168,22 +197,35 @@ fn fluid_tank_settles_and_conserves_mass() {
     }
     let mass1 = world.fluid.total_mass();
     let rel_mass = ((mass1 - mass0) / mass0).abs();
-    assert!(rel_mass < 1e-9, "fluid mass not conserved {mass0} -> {mass1} rel {rel_mass}");
+    assert!(
+        rel_mass < 1e-9,
+        "fluid mass not conserved {mass0} -> {mass1} rel {rel_mass}"
+    );
     let vmax = world.fluid.max_speed();
     assert!(vmax < 1.2, "tank should have settled but vmax={vmax} m/s");
     // Density stratification: bottom half average rho should be >= top half.
-    let mut bottom_rho = 0.0; let mut top_rho = 0.0;
-    let mut bottom_n = 0usize; let mut top_n = 0usize;
+    let mut bottom_rho = 0.0;
+    let mut top_rho = 0.0;
+    let mut bottom_n = 0usize;
+    let mut top_n = 0usize;
     let midy = (world.config.bounds.min.y + world.config.bounds.max.y) * 0.5;
     for i in 0..world.fluid.n {
-        if world.fluid.py[i] < midy { bottom_rho += world.fluid.rho[i]; bottom_n += 1; }
-        else { top_rho += world.fluid.rho[i]; top_n += 1; }
+        if world.fluid.py[i] < midy {
+            bottom_rho += world.fluid.rho[i];
+            bottom_n += 1;
+        } else {
+            top_rho += world.fluid.rho[i];
+            top_n += 1;
+        }
     }
     if bottom_n > 0 && top_n > 0 {
         let avg_b = bottom_rho / bottom_n as f64;
         let avg_t = top_rho / top_n as f64;
         // In WCSPH with gravity, bottom slightly denser; at rest the difference is modest (compressibility c=12).
-        assert!(avg_b + 1e-6 >= avg_t, "bottom avg {avg_b} should be >= top {avg_t}");
+        assert!(
+            avg_b + 1e-6 >= avg_t,
+            "bottom avg {avg_b} should be >= top {avg_t}"
+        );
     }
 }
 
@@ -198,15 +240,29 @@ fn determinism_double_run() {
         let mut w = World::new("det".into(), cfg, None);
         w.enqueue_events(vec![
             ws_domain::events::SimEvent::SpawnSphere {
-                material: "steel".into(), pos: Vec3::new(0.0, 2.0, 0.0), vel: Vec3::new(1.0, 0.0, 0.0), radius: 0.15,
+                material: "steel".into(),
+                pos: Vec3::new(0.0, 2.0, 0.0),
+                vel: Vec3::new(1.0, 0.0, 0.0),
+                radius: 0.15,
             },
-            ws_domain::events::SimEvent::SpawnFluidBlob { center: Vec3::new(0.0, 1.0, 0.0), radius: 0.42 },
+            ws_domain::events::SimEvent::SpawnFluidBlob {
+                center: Vec3::new(0.0, 1.0, 0.0),
+                radius: 0.42,
+            },
         ]);
         w
     };
-    let mut a = mk(); let mut b = mk();
-    for _ in 0..70 { a.step_tick(); b.step_tick(); }
-    assert_eq!(a.state_hash(), b.state_hash(), "double-run must be bit-exact on same platform");
+    let mut a = mk();
+    let mut b = mk();
+    for _ in 0..70 {
+        a.step_tick();
+        b.step_tick();
+    }
+    assert_eq!(
+        a.state_hash(),
+        b.state_hash(),
+        "double-run must be bit-exact on same platform"
+    );
     assert_eq!(a.tick, b.tick);
 }
 
@@ -221,9 +277,14 @@ fn snapshot_roundtrip_is_exact_and_resumable() {
         World::new("snap".into(), cfg, None)
     };
     world.enqueue_events(vec![ws_domain::events::SimEvent::SpawnSphere {
-        material: "rubber".into(), pos: Vec3::new(0.5, 2.0, 0.0), vel: Vec3::zero(), radius: 0.12,
+        material: "rubber".into(),
+        pos: Vec3::new(0.5, 2.0, 0.0),
+        vel: Vec3::zero(),
+        radius: 0.12,
     }]);
-    for _ in 0..60 { world.step_tick(); }
+    for _ in 0..60 {
+        world.step_tick();
+    }
     let snap = world.snapshot_json();
     let hash_before = world.state_hash();
     let tick_before = world.tick;
@@ -234,8 +295,15 @@ fn snapshot_roundtrip_is_exact_and_resumable() {
     assert_eq!(restored.tick, tick_before);
 
     // Advance both for another 60 ticks and compare
-    for _ in 0..60 { world.step_tick(); restored.step_tick(); }
-    assert_eq!(world.state_hash(), restored.state_hash(), "post-restore divergence");
+    for _ in 0..60 {
+        world.step_tick();
+        restored.step_tick();
+    }
+    assert_eq!(
+        world.state_hash(),
+        restored.state_hash(),
+        "post-restore divergence"
+    );
 }
 
 #[test]
@@ -246,16 +314,24 @@ fn fork_produces_independent_diverging_worlds() {
         cfg.quality = Quality::Low;
         World::new("parent".into(), cfg, None)
     };
-    for _ in 0..30 { parent.step_tick(); }
+    for _ in 0..30 {
+        parent.step_tick();
+    }
     let mut child = parent.fork("child".into());
     assert_eq!(parent.state_hash(), child.state_hash());
     assert_ne!(parent.id, child.id);
 
     // Diverge with different events
     child.enqueue_events(vec![ws_domain::events::SimEvent::SpawnSphere {
-        material: "wood".into(), pos: Vec3::new(0.0, 3.0, 0.0), vel: Vec3::zero(), radius: 0.1,
+        material: "wood".into(),
+        pos: Vec3::new(0.0, 3.0, 0.0),
+        vel: Vec3::zero(),
+        radius: 0.1,
     }]);
-    for _ in 0..30 { parent.step_tick(); child.step_tick(); }
+    for _ in 0..30 {
+        parent.step_tick();
+        child.step_tick();
+    }
     assert_ne!(parent.state_hash(), child.state_hash());
     assert_eq!(parent.rigid.n + 1, child.rigid.n);
 }

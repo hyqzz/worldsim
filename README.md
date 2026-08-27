@@ -5,7 +5,7 @@
 
 [![CI](https://github.com/hyqzz/worldsim/actions/workflows/ci.yml/badge.svg)](https://github.com/hyqzz/worldsim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-7aa1ff)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.2-7aa1ff)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange)](https://www.rust-lang.org)
 [![Zero deps](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)](#supply-chain)
 
@@ -29,7 +29,7 @@ Most physics engines are *libraries you link*. WorldSim is **infrastructure you 
 
 - **Any project** (game, robotics/digital twin, research, teaching) talks to the same HTTP/WebSocket API.
 - **Precision is a service** — `quality: low|medium|high` plus a `budget_ms` QoS controller downgrades gracefully under load and upgrades when spare.
-- **Correctness is tested, not claimed** — every commit runs 7 analytic validation problems (projectile, Kepler orbit, heat diffusion, fluid settlement, determinism, snapshot, fork).
+- **Correctness is tested, not claimed** — every commit runs 7 analytic validation problems (projectile, Kepler orbit, heat diffusion, fluid settlement, determinism, snapshot, fork) plus 15 unit and API contract tests (59 total).
 
 ---
 
@@ -123,13 +123,19 @@ fork_produces_independent_diverging_worlds
 
 ```
 Worlds     POST /v1/worlds  GET /v1/worlds  GET /v1/worlds/:id  DELETE …
-Control    POST /v1/worlds/:id/control   {action:"pause"|"resume"|"step"|"set_rate"}
+             {"config":{"auto_start":false,"seed_hex":"...","quality":"low"}}
+Control    POST /v1/worlds/:id/control   {action:"pause"|"resume"|"step"|"flush"|"set_rate"}
+Step/Obs   POST /v1/worlds/:id/step      {ticks, events, include_fluid, include_fields}
+             POST /v1/worlds/:id/observe   {probes:[{pos,quantity}], include_fluid}
+             GET  /v1/worlds/:id/state/full ?include_fluid&include_fields&fluid_stride
 Precision  PUT  /v1/worlds/:id/precision {quality:"low"|"medium"|"high"|"auto", budget_ms}
-Events     POST /v1/worlds/:id/events   {events:[{type:"spawn_sphere"|"spawn_fluid"|"heat_source"|"apply_force"|"set_gravity"|"remove_body"}]}
+Events     POST /v1/worlds/:id/events   {events:[{type:"spawn_sphere"|"spawn_capsule"|"spawn_nbody"|"spawn_fluid"|"heat_source"|"apply_force"|"set_gravity"|"remove_body"}]}
 Probes     GET  /v1/worlds/:id/probe?x=&y=&z=&quantity=temperature|density|pressure|velocity
 State      GET  /v1/worlds/:id/state
-Streams    GET  /v1/worlds/:id/stream    →  WebSocket (preferred) or ?format=sse
+Streams    GET  /v1/worlds/:id/stream    →  WebSocket (bodies+fluid+nbody) or ?format=sse
 Snapshots  POST /v1/worlds/:id/snapshots  GET …/snapshots/:sid  POST …/restore  POST …/fork
+Batch      POST /v1/batch/create  POST /v1/batch/step  POST /v1/batch/transition  POST /v1/batch/inject
+WDL        POST /v1/wdl/parse  POST /v1/worlds/from-wdl
 ```
 
 All responses are JSON over UTF-8.  Snapshots encode binary arrays as Base64 of little-endian IEEE-754.
@@ -149,7 +155,7 @@ All responses are JSON over UTF-8.  Snapshots encode binary arrays as Base64 of 
   "systems": {
     "rigid":  {"restitution": 0.6, "friction": 0.35, "substeps": 2},
     "fluid":  {"enabled": true, "h": 0.06, "rho0": 1000, "c": 12, "visc_alpha": 0.08},
-    "heat":   {"enabled": true, "res": [48,48,48], "alpha": 1.43e-7, "volumetric_capacity": 4.186e6},
+    "heat":   {"enabled": true, "res": [16,16,16], "alpha": 1.43e-7, "volumetric_capacity": 4.186e6},
     "nbody":  {"enabled": false, "softening": 0.01}
   }
 }

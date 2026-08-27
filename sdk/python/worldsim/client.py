@@ -5,6 +5,7 @@ import http.client
 import json
 import time
 import urllib.parse
+import base64
 import urllib.request
 import urllib.error
 from typing import Any, Dict, Iterator, List, Optional
@@ -86,6 +87,14 @@ class Client:
             body["name"] = name
         return self._request("POST", "/v1/worlds", body)
 
+    def parse_wdl(self, wdl: str) -> Dict[str, Any]:
+        """Validate and expand a WDL document through the server."""
+        return self._request("POST", "/v1/wdl/parse", {"wdl": wdl})
+
+    def create_world_from_wdl(self, wdl: str) -> Dict[str, Any]:
+        """Create a world from a WDL document."""
+        return self._request("POST", "/v1/worlds/from-wdl", {"wdl": wdl})
+
     def list_worlds(self) -> List[Dict[str, Any]]:
         data = self._get("/v1/worlds")
         return data.get("worlds", []) if isinstance(data, dict) else []
@@ -98,6 +107,39 @@ class Client:
 
     def state(self, wid: str) -> Dict[str, Any]:
         return self._request("GET", f"/v1/worlds/{urllib.parse.quote(wid)}/state")
+
+    def state_full(self, wid: str, include_fluid: bool = False, fluid_stride: int = 1,
+                   include_fields: bool = False) -> Dict[str, Any]:
+        """Return columnar f64 state arrays (Base64 encoded by the server)."""
+        return self._get(f"/v1/worlds/{urllib.parse.quote(wid)}/state/full", {
+            "include_fluid": "true" if include_fluid else "false",
+            "fluid_stride": fluid_stride,
+            "include_fields": "true" if include_fields else "false",
+        })
+
+    def observe(self, wid: str, probes: Optional[List[Dict[str, Any]]] = None,
+                include_fluid: bool = False, fluid_stride: int = 1) -> Dict[str, Any]:
+        """Read a batch observation without advancing the world."""
+        return self._request("POST", f"/v1/worlds/{urllib.parse.quote(wid)}/observe", {
+            "probes": probes or [], "include_fluid": include_fluid,
+            "fluid_stride": fluid_stride,
+        })
+
+    def step_sync(self, wid: str, ticks: int = 1, include_fluid: bool = False,
+                  fluid_stride: int = 1, include_fields: bool = False,
+                  events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Advance exactly `ticks` ticks and return the post-step observation.
+
+        ``events`` can be included in the same request, making action →
+        simulation → observation atomic for a control loop.
+        """
+        body: Dict[str, Any] = {
+            "ticks": ticks, "include_fluid": include_fluid,
+            "fluid_stride": fluid_stride, "include_fields": include_fields,
+        }
+        if events is not None:
+            body["events"] = events
+        return self._request("POST", f"/v1/worlds/{urllib.parse.quote(wid)}/step", body)
 
     # ---- control / precision ----
 
@@ -189,35 +231,47 @@ class Client:
                 payload = {}
             _raise_for_payload(resp.status, payload)
         count = 0
-        buf = ""
+        event_lines = []
         try:
+            # readline() is essential here: read(8192) waits for a full buffer
+            # and makes a live SSE stream appear to hang until many frames accumulate.
             while True:
-                chunk = resp.read(8192)
-                if not chunk:
+                line = resp.readline()
+                if not line:
                     break
-                buf += chunk.decode("utf-8", errors="replace")
-                while "\n\n" in buf:
-                    raw, buf = buf.split("\n\n", 1)
-                    # SSE: lines starting with data:
-                    data_lines = [ln[5:].lstrip() for ln in raw.splitlines() if ln.startswith("data:")]
+                text = line.decode("utf-8", errors="replace").rstrip("\r\n")
+                if text == "":
+                    data_lines = [ln[5:].lstrip() for ln in event_lines if ln.startswith("data:")]
+                    event_lines = []
                     if not data_lines:
                         continue
-                    data = "\n".join(data_lines).strip()
-                    if not data:
-                        continue
                     try:
-                        frame = json.loads(data)
+                        frame = json.loads("\n".join(data_lines))
                     except Exception:
                         continue
                     yield frame
                     count += 1
                     if max_frames is not None and count >= max_frames:
                         return
+                elif not text.startswith(":"):
+                    event_lines.append(text)
         finally:
             try:
                 conn.close()
             except Exception:
                 pass
+
+    @staticmethod
+    def decode_f64_array(value: str):
+        """Decode a server Base64 little-endian f64 column into a NumPy array.
+
+        NumPy is intentionally imported lazily so the base HTTP client remains
+        stdlib-only.
+        """
+        import numpy as np
+        if not value:
+            return np.empty(0, dtype=np.float64)
+        return np.frombuffer(base64.b64decode(value), dtype="<f8").copy()
 
     # ---- convenience event builders ----
 

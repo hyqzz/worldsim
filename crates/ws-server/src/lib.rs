@@ -17,3 +17,6 @@ pub mod api;
 pub mod http;
 pub mod router;
 pub mod static_assets;
+
+#[cfg(test)]
+mod api_tests;

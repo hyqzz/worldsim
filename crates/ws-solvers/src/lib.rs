@@ -22,6 +22,9 @@ pub mod nbody;
 pub mod rigid;
 pub mod spatial;
 
+#[cfg(test)]
+mod heat_tests;
+
 /// Solver-layer semantic version of the numerics (bumped when integration
 /// behavior changes in a way that alters results).
 pub const NUMERICS_VERSION: u32 = 1;

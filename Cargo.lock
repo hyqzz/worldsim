@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "worldsim"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ws-core",
  "ws-domain",
@@ -14,18 +14,18 @@ dependencies = [
 
 [[package]]
 name = "ws-core"
-version = "0.1.0"
+version = "0.1.2"
 
 [[package]]
 name = "ws-domain"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ws-core",
 ]
 
 [[package]]
 name = "ws-engine"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ws-core",
  "ws-domain",
@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "ws-server"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ws-core",
  "ws-domain",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "ws-solvers"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "ws-core",
 ]

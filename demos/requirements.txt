@@ -1,0 +1,5 @@
+# Optional dependencies for GIF/PNG demo generation.
+# The WorldSim runtime and base Python SDK have no third-party dependencies.
+numpy>=1.23
+matplotlib>=3.7
+Pillow>=9.0

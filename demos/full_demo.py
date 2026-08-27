@@ -17,6 +17,7 @@ Demo 10: 全场景 — 水箱 + 球 + 热源 + 探针
     python demos/full_demo.py
 """
 import sys, os, json, time
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
 
 def run_demo(port=18099):
@@ -29,6 +30,7 @@ def run_demo(port=18099):
 
     # Create comprehensive world
     w = c.create_world(name="full_demo", config={
+        "auto_start": False,
         "quality": "medium",
         "gravity": [0, -9.81, 0],
         "bounds": {"min": [-2, 0, -2], "max": [2, 4, 2]},
@@ -199,4 +201,7 @@ def run_demo(port=18099):
     c.control(wid, "pause")
 
 if __name__ == "__main__":
-    run_demo()
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--port",type=int,default=18099)
+    run_demo(parser.parse_args().port)

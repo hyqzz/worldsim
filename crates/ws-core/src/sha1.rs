@@ -19,7 +19,13 @@ impl Default for Sha1 {
 impl Sha1 {
     pub fn new() -> Self {
         Self {
-            state: [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0],
+            state: [
+                0x6745_2301,
+                0xEFCD_AB89,
+                0x98BA_DCFE,
+                0x1032_5476,
+                0xC3D2_E1F0,
+            ],
             buf: [0u8; 64],
             buf_len: 0,
             total_len: 0,
@@ -83,8 +89,13 @@ impl Sha1 {
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
         }
-        let (mut a, mut b, mut c, mut d, mut e) =
-            (self.state[0], self.state[1], self.state[2], self.state[3], self.state[4]);
+        let (mut a, mut b, mut c, mut d, mut e) = (
+            self.state[0],
+            self.state[1],
+            self.state[2],
+            self.state[3],
+            self.state[4],
+        );
         for (i, &wi) in w.iter().enumerate() {
             let (f, k) = match i {
                 0..=19 => ((b & c) | ((!b) & d), 0x5A82_7999u32),
@@ -116,10 +127,7 @@ impl Sha1 {
 pub fn sha1_hex(data: &[u8]) -> String {
     let mut h = Sha1::new();
     h.update(data);
-    h.finish()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    h.finish().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -128,14 +136,8 @@ mod tests {
 
     #[test]
     fn nist_vectors() {
-        assert_eq!(
-            sha1_hex(b""),
-            "da39a3ee5e6b4b0d3255bfef95601890afd80709"
-        );
-        assert_eq!(
-            sha1_hex(b"abc"),
-            "a9993e364706816aba3e25717850c26c9cd0d89d"
-        );
+        assert_eq!(sha1_hex(b""), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+        assert_eq!(sha1_hex(b"abc"), "a9993e364706816aba3e25717850c26c9cd0d89d");
         assert_eq!(
             sha1_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
             "84983e441c3bd26ebaae4aa1f95129e5e54670f1"

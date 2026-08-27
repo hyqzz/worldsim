@@ -25,11 +25,13 @@ impl Vec3 {
     }
 
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, o: Self) -> Self {
         Self::new(self.x + o.x, self.y + o.y, self.z + o.z)
     }
 
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, o: Self) -> Self {
         Self::new(self.x - o.x, self.y - o.y, self.z - o.z)
     }
@@ -169,7 +171,11 @@ mod tests {
         assert_eq!(a.dot(b), 32.0);
         assert_eq!(
             a.cross(b),
-            Vec3::new(2.0 * 6.0 - 3.0 * 5.0, 3.0 * 4.0 - 1.0 * 6.0, 1.0 * 5.0 - 2.0 * 4.0)
+            Vec3::new(
+                2.0 * 6.0 - 3.0 * 5.0,
+                3.0 * 4.0 - 1.0 * 6.0,
+                1.0 * 5.0 - 2.0 * 4.0
+            )
         );
         assert!((a.length() - (14.0f64).sqrt()).abs() < 1e-15);
         let n = a.normalized();

@@ -57,7 +57,7 @@ Wall penalty is a soft spring within `0.8h` of each face, plus a hard clamp `±h
 
 **PDE.** `∂T/∂t = α∇²T` plus semi-Lagrangian advection by the SPH velocity and volumetric sources: `ΔT = P·Δt/(ρcₚ·V_cell·N_cells)`.
 
-**Numerics.** Uniform grid `nx×ny×nz` (default `48³`, tests use smaller).  Advection is unconditionally stable (back-trace + trilinear).  Diffusion is explicit 7-pt with Neumann (insulated) boundaries, sub-stepped so `Δt ≤ dx²/(6α)`.  Sources are distributed uniformly across intersecting cells.
+**Numerics.** Uniform grid `nx×ny×nz` (default `16³`, larger grids via config; `48³` for high-quality offline runs).  Advection is unconditionally stable (back-trace + trilinear).  Diffusion is explicit 7-pt with Neumann (insulated) boundaries, sub-stepped so `Δt ≤ dx²/(6α)`.  Sources are distributed uniformly across intersecting cells.
 
 **Sampling.** Trilinear anywhere in the domain (clamped at boundaries).
 

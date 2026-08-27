@@ -29,6 +29,7 @@ DEMOS = {
     8:  ("qos_precision",  "QoS — Low/Med/High"),
     9:  ("wdl_scene",      "WDL — 声明式场景"),
     10: ("full_demo",      "全场景 — 水箱+球+热"),
+    11: ("three_d_scene",   "真正3D — x/y/z状态+3D坐标轴"),
 }
 
 def build():

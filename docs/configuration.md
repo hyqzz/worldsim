@@ -7,6 +7,8 @@
 ```json
 {
   "seed": 42,
+  "seed_hex": "000000000000002a",
+  "auto_start": true,
   "dt": 0.0166667,
   "bounds": {"min": [-2, 0, -2], "max": [2, 4, 2]},
   "container": true,
@@ -18,7 +20,9 @@
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
-| `seed` | u64 | 42 | Master RNG seed. Streams are derived as `seed ^ stream_id`. |
+| `seed` | u64 | 42 | Master RNG seed. Use `seed_hex` (16 hex chars) when the value exceeds 2^53 so JSON does not truncate it. |
+| `seed_hex` | hex u64 | — | Hexadecimal alias for `seed`; `seed_hex` takes precedence over `seed` when both are present. |
+| `auto_start` | bool | true | Whether the background scheduler advances the world. Set `false` for synchronous RL/control loops (`POST /step`). |
 | `dt` | f64 (s) | 1/60 | Macro tick. Clamped (0, 0.1]. Snapshots record time as `tick×dt`. |
 | `bounds` | `{min,max}` (each `[x,y,z]`) | `[-2,0,-2]→[2,4,2]` | Domain. When `container:true` its faces are solid walls for rigid+fluid. |
 | `container` | bool | true | Whether the domain boundary confines matter. |
@@ -54,7 +58,7 @@
 ## `systems.heat`
 
 ```json
-{"enabled": true, "res": [48,48,48], "alpha": 1.43e-7, "volumetric_capacity": 4186000}
+{"enabled": true, "res": [16,16,16], "alpha": 1.43e-7, "volumetric_capacity": 4186000}
 ```
 
 | Key | Range | Meaning |
@@ -88,6 +92,23 @@
 ```
 
 ## QoS  (runtime, not part of the stored snapshot)
+
+```bash
+# Synchronous control (single request): action + exact tick(s)
+curl -s -X POST http://127.0.0.1:8090/v1/worlds/$WID/step -H 'Content-Type: application/json' \
+  -d '{"ticks":1,"events":[{"type":"apply_force","target":{"body":0},"force":[1,0,0]}]}' | jq
+
+# Vectorized per-environment actions (different force for each env)
+curl -s -X POST http://127.0.0.1:8090/v1/batch/transition -H 'Content-Type: application/json' \
+  -d '{"transitions":[{"id":"train-0000","events":[{"type":"apply_force","target":{"body":0},"force":[1,0,0]}]},{"id":"train-0001","events":[]}],"ticks_per_world":1}' | jq
+```
+
+## 3D display
+
+`cargo run -p worldsim -- demo --port 8090` exposes a WebGL2 3D viewer at
+`http://127.0.0.1:8090/viewer/` (`docs/viewer.md`). The WebSocket data stream is a
+true 3D data plane: bodies/fluid/N-body are independent `px,py,pz` point sets;
+the demo `demos/three_d_scene.py` is an offline Matplotlib Axes3D companion.
 
 `PUT /v1/worlds/:id/precision {"quality":"high","budget_ms":8}`
 

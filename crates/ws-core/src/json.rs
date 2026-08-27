@@ -124,11 +124,13 @@ impl Json {
         if items.len() != 3 {
             return None;
         }
-        Some(crate::math::Vec3::new(
-            items[0].as_f64()?,
-            items[1].as_f64()?,
-            items[2].as_f64()?,
-        ))
+        let x = items[0].as_f64()?;
+        let y = items[1].as_f64()?;
+        let z = items[2].as_f64()?;
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return None;
+        }
+        Some(crate::math::Vec3::new(x, y, z))
     }
 
     // ---------- parsing ----------
@@ -274,7 +276,10 @@ impl<'a> Parser<'a> {
                 Ok(Json::Null)
             }
             Some(c) if c == b'-' || c.is_ascii_digit() => self.parse_number(),
-            Some(c) => Err(format!("unexpected character {:?} at byte {}", c as char, self.pos)),
+            Some(c) => Err(format!(
+                "unexpected character {:?} at byte {}",
+                c as char, self.pos
+            )),
         }
     }
 
@@ -371,7 +376,10 @@ impl<'a> Parser<'a> {
                     }
                 }
                 b if b < 0x20 => {
-                    return Err(format!("raw control character in string at byte {}", self.pos))
+                    return Err(format!(
+                        "raw control character in string at byte {}",
+                        self.pos
+                    ))
                 }
                 b => {
                     // Re-assemble UTF-8 multi-byte sequences verbatim.
@@ -479,13 +487,8 @@ mod tests {
         let src = r#"{"a":[1,{"b":null},"xy"],"c":{"d":true}}"#;
         let v = Json::parse(src).unwrap();
         assert_eq!(v.get("a").unwrap().as_arr().unwrap().len(), 3);
-        assert_eq!(
-            v.get("c").unwrap().get("d").unwrap(),
-            &Json::Bool(true)
-        );
-        let inner = v.get("a").unwrap().as_arr().unwrap()[1]
-            .get("b")
-            .unwrap();
+        assert_eq!(v.get("c").unwrap().get("d").unwrap(), &Json::Bool(true));
+        let inner = v.get("a").unwrap().as_arr().unwrap()[1].get("b").unwrap();
         assert!(inner.is_null());
     }
 
@@ -503,8 +506,18 @@ mod tests {
     #[test]
     fn rejects_invalid_documents() {
         for bad in [
-            "", "{\"a\":}", "[1,]", "{\"a\" 1}", "01", "-", "\"unterminated",
-            "nan", "Infinity", "{},1", "[1] trailing", "\"\u{7}\"",
+            "",
+            "{\"a\":}",
+            "[1,]",
+            "{\"a\" 1}",
+            "01",
+            "-",
+            "\"unterminated",
+            "nan",
+            "Infinity",
+            "{},1",
+            "[1] trailing",
+            "\"\u{7}\"",
         ] {
             assert!(Json::parse(bad).is_err(), "should reject: {bad:?}");
         }

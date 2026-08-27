@@ -6,7 +6,7 @@ if(!gl){ document.body.innerHTML="<pre style='padding:20px'>WebGL2 not available
 
 let apiBase=""; // same origin
 let currentWorld=null, ws=null, wsRetry=0;
-let state={tick:0,bodies:{n:0,px:null,py:null,pz:null,r:null,mat:null}, fluid:{n:0,px:null,py:null,pz:null, speed:null}, stats:null};
+let state={tick:0,bodies:{n:0,px:null,py:null,pz:null,r:null,mat:null}, fluid:{n:0,px:null,py:null,pz:null, speed:null}, nbody:{n:0,px:null,py:null,pz:null,r:null}, stats:null};
 
 // --- camera ---
 let cam={yaw:0.6,pitch:0.38,dist:9,target:[0,1,0], fov: 52*Math.PI/180};
@@ -40,7 +40,7 @@ function program(vs,fs){
 const vsPoints=`#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in float aRad;
-layout(location=2) in float aKind; // 0=bodies,1=fluid
+layout(location=2) in float aKind; // 0=bodies,1=fluid,2=nbody
 layout(location=3) in float aScalar; // speed for fluid, mat for bodies
 uniform mat4 uVP; uniform vec3 uEye; uniform float uPixRatio;
 out vec3 vColor; out float vRadius;
@@ -48,10 +48,10 @@ void main(){
   vec4 w=uVP*vec4(aPos,1.0);
   gl_Position=w;
   // size by kind: bodies use radius, fluid fixed
-  float worldSize = aKind<0.5 ? aRad*2.0 : 0.07;
+  float worldSize = aKind<0.5 ? aRad*2.0 : (aKind<1.5 ? 0.07 : aRad*2.0);
   float dist=length(uEye-aPos);
   float pix = worldSize * 520.0 / max(dist,0.4); // tuned for 60° fov
-  if(aKind>0.5) pix*= (0.7+ 0.6*clamp(aScalar/4.0,0.0,1.0));
+  if(aKind>0.5 && aKind<1.5) pix*= (0.7+ 0.6*clamp(aScalar/4.0,0.0,1.0));
   gl_PointSize=clamp(pix, 2.5, 26.0);
   vRadius=gl_PointSize;
   if(aKind<0.5){
@@ -59,14 +59,16 @@ void main(){
     vec3 pal[8]=vec3[8](vec3(0.58,0.60,0.63),vec3(0.78,0.79,0.80),vec3(0.85,0.53,0.35),vec3(0.62,0.44,0.26),vec3(0.22,0.22,0.24),vec3(0.75,0.88,0.90),vec3(0.80,0.92,0.98),vec3(0.90,0.87,0.80));
     int idx=int(clamp(aScalar,0.0,7.0));
     vColor=pal[idx];
-  } else {
+  } else if(aKind<1.5) {
     // fluid: speed heatmap blue->cyan->white
     float t=clamp(aScalar/3.5,0.0,1.0);
     vec3 c0=vec3(0.17,0.46,0.84), c1=vec3(0.32,0.84,0.96), c2=vec3(0.96,0.98,1.0);
     vColor = t<0.5 ? mix(c0,c1,t*2.0) : mix(c1,c2,(t-0.5)*2.0);
-    // tint by height slightly for depth cue
     float h=clamp((aPos.y+2.0)/4.0,0.0,1.0);
     vColor*= (0.82+0.22*h);
+  } else {
+    // N-body point masses: warm gold, visually distinct from material bodies/fluid.
+    vColor=vec3(1.0,0.65,0.18);
   }
 }
 `;
@@ -103,8 +105,13 @@ void main(){ frag=vec4(uColor,1.0); }`;
 const progLines=program(vsLines,fsLines);
 const locLines={ vp: gl.getUniformLocation(progLines,"uVP"), color: gl.getUniformLocation(progLines,"uColor") };
 
-// Buffers
-let bufPoints=gl.createBuffer();
+// Persistent GPU buffers. Reusing these avoids four WebGL allocations/deletions
+// per dataset per animation frame (important for 100k+ fluid points).
+const pointBuffers={
+  bodies:{pos:gl.createBuffer(),rad:gl.createBuffer(),kind:gl.createBuffer(),scalar:gl.createBuffer()},
+  fluid:{pos:gl.createBuffer(),rad:gl.createBuffer(),kind:gl.createBuffer(),scalar:gl.createBuffer()},
+  nbody:{pos:gl.createBuffer(),rad:gl.createBuffer(),kind:gl.createBuffer(),scalar:gl.createBuffer()},
+};
 let lineVbo=gl.createBuffer();
 let lineCountForBounds=0, lineCountForGrid=0;
 let boundsCache=null;
@@ -191,8 +198,15 @@ function ingestFrame(f){
     const px=b64ToF32(fl.px||fl.px_b64||fl.p), py=b64ToF32(fl.py||fl.py_b64), pz=b64ToF32(fl.pz||fl.pz_b64);
     const speed=b64ToF32(fl.speed||fl.speed_b64||fl.s);
     if(px){ state.fluid.px=px; state.fluid.py=py; state.fluid.pz=pz; state.fluid.speed=speed; }
-  } else if(typeof f.fluid_n==="number"){
+  } else if(typeof f.fluid_n==="number"){ 
     state.fluid.n=f.fluid_n;
+  }
+  // N-body point masses are streamed as a third 3D dataset.
+  if(f.nbody){
+    const nb=f.nbody;
+    state.nbody.n=nb.n||0;
+    const px=b64ToF32(nb.px), py=b64ToF32(nb.py), pz=b64ToF32(nb.pz), r=b64ToF32(nb.r);
+    if(px){ state.nbody.px=px; state.nbody.py=py; state.nbody.pz=pz; state.nbody.r=r; }
   }
   // also support flat arrays: f.bodies_px etc legacy path
   if(f.bodies_px){ const px=b64ToF32(f.bodies_px); if(px){ state.bodies.px=px; state.bodies.py=b64ToF32(f.bodies_py); state.bodies.pz=b64ToF32(f.bodies_pz); state.bodies.n=px.length; }}
@@ -201,7 +215,7 @@ function ingestFrame(f){
 
 function updateHUD(){
   const s=state.stats;
-  const stats = s ? `tick ${state.tick}  t=${(s.time||0).toFixed(2)}s  tps ${(s.tps||0).toFixed(1)}  dt ${(s.tick_ms||0).toFixed(1)} ms\nbodies ${state.bodies.n}  fluid ${state.fluid.n}  quality ${s.quality||"?"} ${s.auto?"(auto)":"(locked)"}` : `tick ${state.tick}\nbodies ${state.bodies.n}  fluid ${state.fluid.n}`;
+  const stats = s ? `tick ${state.tick}  t=${(s.time||0).toFixed(2)}s  tps ${(s.tps||0).toFixed(1)}  dt ${(s.tick_ms||0).toFixed(1)} ms\nbodies ${state.bodies.n}  fluid ${state.fluid.n}  nbody ${state.nbody.n}  quality ${s.quality||"?"} ${s.auto?"(auto)":"(locked)"}` : `tick ${state.tick}\nbodies ${state.bodies.n}  fluid ${state.fluid.n}  nbody ${state.nbody.n}`;
   $("hud-stats").textContent=stats;
   if(currentWorld) $("hud-world").textContent=`world ${currentWorld.id.slice(0,8)} · ${currentWorld.name||"unnamed"}`;
 }
@@ -265,37 +279,30 @@ function render(){
   gl.uniform3f(locPoints.eye, eye[0],eye[1],eye[2]);
   gl.uniform1f(locPoints.pix, window.devicePixelRatio||1);
   // assemble interleaved arrays for bodies + fluid in two draw calls? Simpler two calls.
-  function drawSet(px,py,pz, rOrNull, matOrSpeed, kind){
-    const n=px?px.length:0; if(!n) return;
+  function drawSet(px,py,pz, rOrNull, matOrSpeed, kind, buffers){
+    const n=px?px.length:0;
+    if(!n) return;
     const pos=new Float32Array(n*3);
     for(let i=0;i<n;i++){ pos[i*3]=px[i]; pos[i*3+1]=py[i]; pos[i*3+2]=pz[i]; }
-    const rad=rOrNull || new Float32Array(n);
-    if(kind===1 && !rOrNull){ rad.fill(0.06); }
-    const scalar=matOrSpeed || new Float32Array(n);
-    // vao-less: non-interleaved separate attribs would need strides; we interleave manually per draw?
-    // Simpler: three separate buffers.
-    const bPos=gl.createBuffer(), bRad=gl.createBuffer(), bSca=gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, bPos); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bRad); gl.bufferData(gl.ARRAY_BUFFER, rad, gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, bSca); gl.bufferData(gl.ARRAY_BUFFER, scalar, gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
-    // constant kind attribute via vertexAttrib1f + disable array trick: bind and disable? Simpler pass via uniform + branch: we already branch on kind via aKind attribute value.
-    // Fill aKind buffer
-    const aKind=new Float32Array(n); aKind.fill(kind);
-    const bKind=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,bKind); gl.bufferData(gl.ARRAY_BUFFER,aKind,gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,0,0);
-    // Actually shader reads location 2 as aKind and 3 as scalar — need remap: we used location mapping: 0 pos,1 rad,2 kind,3 scalar
-    // So rebind: rad->1, kind->2, scalar->3. Above we mis-wired; fix by reassigning:
-    // Rebind correctly:
-    // already bound 0=pos, 1=rad, 2=scalar (was kind), 3=kind (was scalar) -> swap
-    // Instead recreate correctly quickly:
-    // We'll disable and re-setup: pos0, rad1, kind2, scalar3
-    gl.bindBuffer(gl.ARRAY_BUFFER,bRad); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER,bKind); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
-    gl.bindBuffer(gl.ARRAY_BUFFER,bSca); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,0,0);
+    const rad=rOrNull ? (rOrNull instanceof Float32Array ? rOrNull : Float32Array.from(rOrNull)) : new Float32Array(n);
+    if(kind===1 && !rOrNull) rad.fill(0.06);
+    const scalar=matOrSpeed ? (matOrSpeed instanceof Float32Array ? matOrSpeed : Float32Array.from(matOrSpeed)) : new Float32Array(n);
+    const kinds=new Float32Array(n); kinds.fill(kind);
+    // Buffers persist across frames; bufferData reallocates only the storage
+    // that is needed for this frame, without creating GL objects repeatedly.
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.pos); gl.bufferData(gl.ARRAY_BUFFER,pos,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.rad); gl.bufferData(gl.ARRAY_BUFFER,rad,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.kind); gl.bufferData(gl.ARRAY_BUFFER,kinds,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffers.scalar); gl.bufferData(gl.ARRAY_BUFFER,scalar,gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,0,0);
     gl.drawArrays(gl.POINTS,0,n);
-    gl.deleteBuffer(bPos); gl.deleteBuffer(bRad); gl.deleteBuffer(bSca); gl.deleteBuffer(bKind);
   }
-  drawSet(state.bodies.px,state.bodies.py,state.bodies.pz, state.bodies.r, state.bodies.mat?new Float32Array(state.bodies.mat):null, 0);
-  drawSet(state.fluid.px,state.fluid.py,state.fluid.pz, null, state.fluid.speed, 1);
+  drawSet(state.bodies.px,state.bodies.py,state.bodies.pz, state.bodies.r, state.bodies.mat?Float32Array.from(state.bodies.mat):null, 0, pointBuffers.bodies);
+  drawSet(state.fluid.px,state.fluid.py,state.fluid.pz, null, state.fluid.speed, 1, pointBuffers.fluid);
+  drawSet(state.nbody.px,state.nbody.py,state.nbody.pz, state.nbody.r, null, 2, pointBuffers.nbody);
 }
 render();
 

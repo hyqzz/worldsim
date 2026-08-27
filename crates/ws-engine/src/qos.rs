@@ -61,7 +61,7 @@ pub fn limits_for(q: Quality) -> Limits {
 /// [`QosController::record`] after each tick.  The controller reports the
 /// *effective* level the world should run at via [`QosController::effective_quality`].
 /// User-locked quality (via `PUT /precision`) bypasses auto decisions.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QosController {
     /// User-requested level (if locked) or auto level.
     pub requested: Quality,
@@ -81,29 +81,52 @@ pub struct QosController {
 
 impl QosController {
     pub fn new(quality: Quality, budget_ms: f64) -> Self {
-        Self{
-            requested: quality, locked:false, effective: quality,
+        Self {
+            requested: quality,
+            locked: false,
+            effective: quality,
             budget_ms: budget_ms.clamp(1.0, 500.0),
-            over_streak:0, under_streak:0, ema_ms: budget_ms,
+            over_streak: 0,
+            under_streak: 0,
+            ema_ms: budget_ms,
         }
     }
 
     pub fn lock(&mut self, q: Quality) {
-        self.requested=q; self.locked=true; self.effective=q;
-        self.over_streak=0; self.under_streak=0;
+        self.requested = q;
+        self.locked = true;
+        self.effective = q;
+        self.over_streak = 0;
+        self.under_streak = 0;
     }
 
     pub fn unlock(&mut self) {
-        self.locked=false;
-        self.effective=self.requested;
-        self.over_streak=0; self.under_streak=0;
+        self.locked = false;
+        self.effective = self.requested;
+        self.over_streak = 0;
+        self.under_streak = 0;
     }
 
     pub fn set_budget(&mut self, ms: f64) {
-        self.budget_ms=ms.clamp(1.0, 500.0);
+        self.budget_ms = ms.clamp(1.0, 500.0);
     }
 
-    pub fn limits(&self)->Limits { limits_for(self.effective) }
+    pub fn limits(&self) -> Limits {
+        limits_for(self.effective)
+    }
+
+    /// Restore the runtime QoS state captured in a snapshot. Streaks are
+    /// intentionally reset; they affect future adaptation but not the current
+    /// physical tick, while effective level/lock/budget do.
+    pub fn restore_runtime(&mut self, effective: Quality, locked: bool, budget_ms: f64) {
+        self.effective = effective;
+        self.requested = effective;
+        self.locked = locked;
+        self.budget_ms = budget_ms.clamp(1.0, 500.0);
+        self.over_streak = 0;
+        self.under_streak = 0;
+        self.ema_ms = self.budget_ms;
+    }
 
     /// Record a wall-clock measurement and maybe step the level.
     ///
@@ -111,40 +134,50 @@ impl QosController {
     /// - Over budget for 60 consecutive ticks → demote one level (High→Mid→Low, stays at Low).
     /// - Well under budget (≤ 60% of budget) for 600 ticks → promote one level.
     pub fn record(&mut self, measured_ms: f64) {
-        if self.locked { return; }
+        if self.locked {
+            return;
+        }
         // EMA α=0.08 for smoother reporting (the streak decides promotions, the EMA just for stats).
-        self.ema_ms = self.ema_ms*0.92 + measured_ms*0.08;
+        self.ema_ms = self.ema_ms * 0.92 + measured_ms * 0.08;
 
         if measured_ms > self.budget_ms {
-            self.over_streak+=1; self.under_streak=0;
+            self.over_streak += 1;
+            self.under_streak = 0;
             if self.over_streak >= 60 {
                 self.effective = match self.effective {
                     Quality::High => Quality::Medium,
                     Quality::Medium => Quality::Low,
                     Quality::Low => Quality::Low,
                 };
-                self.over_streak=0;
+                self.over_streak = 0;
                 // Stay demoted for at least 300 ticks before reconsidering promotion.
-                self.under_streak=0;
+                self.under_streak = 0;
             }
-        } else if measured_ms < self.budget_ms*0.60 {
-            self.under_streak+=1; self.over_streak=0;
+        } else if measured_ms < self.budget_ms * 0.60 {
+            self.under_streak += 1;
+            self.over_streak = 0;
             if self.under_streak >= 600 {
                 self.effective = match self.effective {
                     Quality::Low => Quality::Medium,
                     Quality::Medium => Quality::High,
                     Quality::High => Quality::High,
                 };
-                self.under_streak=0;
+                self.under_streak = 0;
             }
         } else {
             // Within budget but not comfortably under — decay counters slowly instead of resetting.
-            if self.over_streak>0 { self.over_streak=self.over_streak.saturating_sub(1); }
-            if self.under_streak>0 { self.under_streak=self.under_streak.saturating_sub(1); }
+            if self.over_streak > 0 {
+                self.over_streak = self.over_streak.saturating_sub(1);
+            }
+            if self.under_streak > 0 {
+                self.under_streak = self.under_streak.saturating_sub(1);
+            }
         }
     }
 
-    pub fn ema(&self)->f64 { self.ema_ms }
+    pub fn ema(&self) -> f64 {
+        self.ema_ms
+    }
 }
 
 #[cfg(test)]
@@ -152,31 +185,45 @@ mod tests {
     use super::*;
     #[test]
     fn downgrades_when_over_budget() {
-        let mut c=QosController::new(Quality::High, 16.0);
-        for _ in 0..70 { c.record(30.0); }
+        let mut c = QosController::new(Quality::High, 16.0);
+        for _ in 0..70 {
+            c.record(30.0);
+        }
         assert_eq!(c.effective, Quality::Medium);
-        for _ in 0..70 { c.record(30.0); }
+        for _ in 0..70 {
+            c.record(30.0);
+        }
         assert_eq!(c.effective, Quality::Low);
         // Stays at Low.
-        for _ in 0..70 { c.record(30.0); }
+        for _ in 0..70 {
+            c.record(30.0);
+        }
         assert_eq!(c.effective, Quality::Low);
     }
     #[test]
     fn upgrades_when_well_under() {
-        let mut c=QosController::new(Quality::Low, 16.0);
-        for _ in 0..650 { c.record(5.0); }
+        let mut c = QosController::new(Quality::Low, 16.0);
+        for _ in 0..650 {
+            c.record(5.0);
+        }
         assert_eq!(c.effective, Quality::Medium);
-        for _ in 0..650 { c.record(5.0); }
+        for _ in 0..650 {
+            c.record(5.0);
+        }
         assert_eq!(c.effective, Quality::High);
     }
     #[test]
     fn locked_never_moves() {
-        let mut c=QosController::new(Quality::High, 16.0);
+        let mut c = QosController::new(Quality::High, 16.0);
         c.lock(Quality::High);
-        for _ in 0..500 { c.record(999.0); }
+        for _ in 0..500 {
+            c.record(999.0);
+        }
         assert_eq!(c.effective, Quality::High);
         c.unlock();
-        for _ in 0..70 { c.record(999.0); }
+        for _ in 0..70 {
+            c.record(999.0);
+        }
         assert_eq!(c.effective, Quality::Medium);
     }
     #[test]

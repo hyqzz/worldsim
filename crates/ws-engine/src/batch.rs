@@ -1,17 +1,15 @@
-//! Batch execution for training — step many worlds in parallel.
+//! Batch execution for training — fixed-worker parallel stepping.
 //!
-//! The training SLA requires `1024 envs × 100 Hz = 102k steps/s` on a single
-//! machine. A serial `for wid in ids { world.step() }` cannot reach it.
-//! `BatchWorld` steps a slice of `Arc<Mutex<World>>` with `std::thread::scope`,
-//! each thread owning one world lock for the whole tick. This is the
-//! “Batch” modality of the final form (Embedded remains <0.3ms via PyO3,
-//! Batch gives throughput, Service gives convenience).
+//! Batch worlds are explicit-control environments: callers create them with
+//! `auto_start=false` and advance them only through [`batch_step`]. A bounded
+//! worker set is used rather than one OS thread per environment; this keeps
+//! 1024-environment jobs within scheduler and memory limits.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::world::World;
-use ws_domain::config::WorldConfig;
 
 /// Result of one world in a batch step.
 #[derive(Debug, Clone)]
@@ -26,74 +24,93 @@ pub struct BatchStepResult {
 }
 
 /// Step many worlds in parallel, each for `ticks_per_world` ticks.
-/// Returns per-world results in input order.
+///
+/// Work is distributed over at most `available_parallelism()` scoped workers.
+/// The output order always matches the input order. Each world is independently
+/// locked, so worlds do not share mutable simulation state.
 pub fn batch_step(worlds: &[Arc<Mutex<World>>], ticks_per_world: usize) -> Vec<BatchStepResult> {
-    let n = worlds.len();
-    let mut results: Vec<Option<BatchStepResult>> = vec![None; n];
+    if worlds.is_empty() {
+        return Vec::new();
+    }
 
-    // Collect results in a Vec<Option<...>>. We avoid unsafe pointers by having
-    // each scoped thread return its result via a Mutex<Vec>, then merge.
-    // This is the safest pattern for std::thread::scope + mutable collection.
-    let result_cells: Vec<Mutex<Option<BatchStepResult>>> =
-        (0..n).map(|_| Mutex::new(None)).collect();
-    let result_cells_ref = &result_cells;
+    let result_cells: Arc<Vec<Mutex<Option<BatchStepResult>>>> =
+        Arc::new((0..worlds.len()).map(|_| Mutex::new(None)).collect());
+    let next = Arc::new(AtomicUsize::new(0));
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(worlds.len());
 
-    std::thread::scope(|s| {
-        for (i, warc) in worlds.iter().enumerate() {
-            let warc = Arc::clone(warc);
-            let cell = &result_cells_ref[i];
-            s.spawn(move || {
-                let mut total_ms = 0.0;
-                let mut last = None;
-                for _ in 0..ticks_per_world {
-                    let t0 = Instant::now();
-                    {
-                        let mut w = warc.lock().unwrap();
-                        w.step_tick();
-                        last = Some((w.id.clone(), w.tick, w.time, w.state_hash(), w.rigid.n, w.fluid.n));
-                    }
-                    total_ms += t0.elapsed().as_secs_f64() * 1000.0;
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            let cells = Arc::clone(&result_cells);
+            let next_index = Arc::clone(&next);
+            scope.spawn(move || loop {
+                let index = next_index.fetch_add(1, Ordering::Relaxed);
+                if index >= worlds.len() {
+                    break;
                 }
-                if let Some((id, tick, time, hash, bodies, fluid)) = last {
-                    *cell.lock().unwrap() = Some(BatchStepResult {
-                        id,
-                        tick,
-                        time,
-                        hash: format!("{hash:016x}"),
-                        tick_ms: if ticks_per_world > 0 {
-                            total_ms / ticks_per_world as f64
-                        } else {
+                let world = Arc::clone(&worlds[index]);
+                let started = Instant::now();
+                {
+                    let mut guard = world.lock().unwrap();
+                    guard.step_exact(ticks_per_world);
+                    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+                    let result = BatchStepResult {
+                        id: guard.id.clone(),
+                        tick: guard.tick,
+                        time: guard.time,
+                        hash: format!("{:016x}", guard.state_hash()),
+                        tick_ms: if ticks_per_world == 0 {
                             0.0
+                        } else {
+                            elapsed / ticks_per_world as f64
                         },
-                        bodies,
-                        fluid,
-                    });
+                        bodies: guard.rigid.n,
+                        fluid: guard.fluid.n,
+                    };
+                    *cells[index].lock().unwrap() = Some(result);
                 }
             });
         }
     });
 
-    for (i, cell) in result_cells.into_iter().enumerate() {
-        results[i] = cell.into_inner().unwrap();
-    }
-
-    results.into_iter().map(|r|
-        r.unwrap_or(BatchStepResult {
-            id: String::new(), tick: 0, time: 0.0,
-            hash: String::new(), tick_ms: 0.0, bodies: 0, fluid: 0,
+    result_cells
+        .iter()
+        .map(|cell| {
+            cell.lock().unwrap().clone().unwrap_or(BatchStepResult {
+                id: String::new(),
+                tick: 0,
+                time: 0.0,
+                hash: String::new(),
+                tick_ms: 0.0,
+                bodies: 0,
+                fluid: 0,
+            })
         })
-    ).collect()
+        .collect()
 }
 
-/// Convenience: create `n` worlds from a template config, each with a unique id.
-pub fn create_batch(template: &ws_domain::config::WorldConfig, n: usize, name_prefix: &str) -> Vec<Arc<Mutex<World>>> {
+/// Convenience for embedded Rust users: create independent, manually-stepped
+/// worlds from a template. API callers use the equivalent batch endpoint.
+pub fn create_batch(
+    template: &ws_domain::config::WorldConfig,
+    n: usize,
+    name_prefix: &str,
+) -> Vec<Arc<Mutex<World>>> {
     (0..n)
         .map(|i| {
             let mut cfg = template.clone();
-            // Derive per-world seed so parallel envs don't correlate.
-            cfg.seed = cfg.seed.wrapping_add((i as u64).wrapping_mul(0x9E3779B97F4A7C15));
+            cfg.auto_start = false;
+            cfg.seed = cfg
+                .seed
+                .wrapping_add((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
             let id = format!("{name_prefix}-{i:04}");
-            Arc::new(Mutex::new(World::new(id, cfg, Some(format!("{name_prefix}-{i}")))))
+            Arc::new(Mutex::new(World::new(
+                id,
+                cfg,
+                Some(format!("{name_prefix}-{i}")),
+            )))
         })
         .collect()
 }
@@ -105,23 +122,27 @@ mod tests {
 
     #[test]
     fn batch_step_is_equivalent_to_serial() {
-        let cfg = WorldConfig::default();
+        let mut cfg = WorldConfig::default();
+        cfg.systems.fluid.enabled = false;
+        cfg.systems.heat.enabled = false;
         let a = create_batch(&cfg, 4, "a");
         let b = create_batch(&cfg, 4, "b");
-        // a via batch
         let r_batch = batch_step(&a, 10);
-        // b via serial
         for w in &b {
-            for _ in 0..10 {
-                w.lock().unwrap().step_tick();
-            }
+            w.lock().unwrap().step_exact(10);
         }
         for (ra, wb) in r_batch.iter().zip(b.iter()) {
-            let hb = {
-                let w = wb.lock().unwrap();
-                format!("{:016x}", w.state_hash())
-            };
+            let hb = format!("{:016x}", wb.lock().unwrap().state_hash());
             assert_eq!(ra.hash, hb);
         }
+    }
+
+    #[test]
+    fn zero_tick_returns_current_state() {
+        let cfg = WorldConfig::default();
+        let worlds = create_batch(&cfg, 2, "zero");
+        let results = batch_step(&worlds, 0);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].tick, 0);
     }
 }

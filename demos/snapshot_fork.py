@@ -17,6 +17,7 @@ Demo 6: 快照与分叉 — 平行宇宙实验
     python demos/snapshot_fork.py
 """
 import sys, os, json, time
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
 
 def run_demo(port=18099):
@@ -31,6 +32,7 @@ def run_demo(port=18099):
     c = ensure_server(port)
 
     w = c.create_world(name="fork_parent", config={
+        "auto_start": False,
         "quality": "low",
         "gravity": [0, -9.81, 0],
         "bounds": {"min": [-2, 0, -1], "max": [2, 4, 1]},
@@ -143,4 +145,7 @@ def run_demo(port=18099):
     c.delete_world(child_id)
 
 if __name__ == "__main__":
-    run_demo()
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--port",type=int,default=18099)
+    run_demo(parser.parse_args().port)

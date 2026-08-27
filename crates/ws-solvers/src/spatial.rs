@@ -28,6 +28,7 @@ impl UniformGrid {
     /// Build from position SoAs. `cell` must be positive.  Positions are
     /// assumed to lie inside or near `bounds` (outliers clamped to the edge
     /// cell — they are still findable).
+    #[allow(clippy::too_many_arguments)]
     pub fn rebuild(
         &mut self,
         min: Vec3,
@@ -63,9 +64,13 @@ impl UniformGrid {
             dims[2] = ((dims[2] as f64 * scale).floor() as i32).max(1);
             cells = dims[0] as usize * dims[1] as usize * dims[2] as usize;
             while cells > cap_cells && (dims[0] > 1 || dims[1] > 1 || dims[2] > 1) {
-                if dims[0] > 1 { dims[0] -= 1; }
-                else if dims[1] > 1 { dims[1] -= 1; }
-                else if dims[2] > 1 { dims[2] -= 1; }
+                if dims[0] > 1 {
+                    dims[0] -= 1;
+                } else if dims[1] > 1 {
+                    dims[1] -= 1;
+                } else if dims[2] > 1 {
+                    dims[2] -= 1;
+                }
                 cells = dims[0] as usize * dims[1] as usize * dims[2] as usize;
             }
         }
@@ -77,9 +82,7 @@ impl UniformGrid {
         self.start = vec![0u32; cell_count + 1];
         if n == 0 || cell_count == 0 {
             self.items.clear();
-            for v in &mut self.start {
-                *v = 0;
-            }
+            self.start.fill(0);
             return;
         }
 
@@ -91,9 +94,9 @@ impl UniformGrid {
         }
         // Pass 2: prefix sums → start
         let mut acc = 0u32;
-        for i in 0..cell_count {
+        for (i, count) in cnt.iter().enumerate() {
             self.start[i] = acc;
-            acc += cnt[i];
+            acc += *count;
         }
         self.start[cell_count] = acc;
         assert_eq!(acc as usize, n);
@@ -122,16 +125,24 @@ impl UniformGrid {
     /// centre cell) of `p`.  This is the query for rigid broad-phase and for
     /// fluid when cell = support radius.
     pub fn for_each_in_neighbourhood<F: FnMut(u32)>(&self, p: Vec3, mut f: F) {
-        let Some([cx, cy, cz]) = self.coord_of(p) else { return };
+        let Some([cx, cy, cz]) = self.coord_of(p) else {
+            return;
+        };
         for dz in -1..=1 {
             let nz = cz + dz;
-            if !(0..self.dims[2]).contains(&nz) { continue; }
+            if !(0..self.dims[2]).contains(&nz) {
+                continue;
+            }
             for dy in -1..=1 {
                 let ny = cy + dy;
-                if !(0..self.dims[1]).contains(&ny) { continue; }
+                if !(0..self.dims[1]).contains(&ny) {
+                    continue;
+                }
                 for dx in -1..=1 {
                     let nx = cx + dx;
-                    if !(0..self.dims[0]).contains(&nx) { continue; }
+                    if !(0..self.dims[0]).contains(&nx) {
+                        continue;
+                    }
                     let idx = self.linear_idx(nx, ny, nz);
                     for k in self.start[idx] as usize..self.start[idx + 1] as usize {
                         f(self.items[k]);
@@ -180,15 +191,25 @@ impl UniformGrid {
                     for dz in -1..=1 {
                         for dy in -1..=1 {
                             for dx in -1..=1 {
-                                if dx == 0 && dy == 0 && dz == 0 { continue; }
+                                if dx == 0 && dy == 0 && dz == 0 {
+                                    continue;
+                                }
                                 let nx2 = cx + dx;
                                 let ny2 = cy + dy;
                                 let nz2 = cz + dz;
-                                if !(0..self.dims[0]).contains(&nx2) { continue; }
-                                if !(0..self.dims[1]).contains(&ny2) { continue; }
-                                if !(0..self.dims[2]).contains(&nz2) { continue; }
+                                if !(0..self.dims[0]).contains(&nx2) {
+                                    continue;
+                                }
+                                if !(0..self.dims[1]).contains(&ny2) {
+                                    continue;
+                                }
+                                if !(0..self.dims[2]).contains(&nz2) {
+                                    continue;
+                                }
                                 let neigh = lin(nx2, ny2, nz2);
-                                if neigh <= center { continue; }
+                                if neigh <= center {
+                                    continue;
+                                }
                                 let b0 = self.start[neigh] as usize;
                                 let b1 = self.start[neigh + 1] as usize;
                                 for ia in a0..a1 {
@@ -227,19 +248,30 @@ impl UniformGrid {
         (x + y * self.dims[0] + z * self.dims[0] * self.dims[1]) as usize
     }
 
-    pub fn dims(&self) -> [i32; 3] { self.dims }
-    pub fn cell_count(&self) -> usize { self.dims[0] as usize * self.dims[1] as usize * self.dims[2] as usize }
+    pub fn dims(&self) -> [i32; 3] {
+        self.dims
+    }
+    pub fn cell_count(&self) -> usize {
+        self.dims[0] as usize * self.dims[1] as usize * self.dims[2] as usize
+    }
 }
 
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn cell_index_of(
-    x: f64, y: f64, z: f64,
-    min: Vec3, nx: usize, _ny: usize, inv_cell: f64, dims: &[i32;3],
+    x: f64,
+    y: f64,
+    z: f64,
+    min: Vec3,
+    nx: usize,
+    _ny: usize,
+    inv_cell: f64,
+    dims: &[i32; 3],
 ) -> usize {
-    let ix = (((x - min.x) * inv_cell).floor() as i32).clamp(0, dims[0]-1) as usize;
-    let iy = (((y - min.y) * inv_cell).floor() as i32).clamp(0, dims[1]-1) as usize;
-    let iz = (((z - min.z) * inv_cell).floor() as i32).clamp(0, dims[2]-1) as usize;
-    ix + iy*nx + iz*nx*dims[1] as usize
+    let ix = (((x - min.x) * inv_cell).floor() as i32).clamp(0, dims[0] - 1) as usize;
+    let iy = (((y - min.y) * inv_cell).floor() as i32).clamp(0, dims[1] - 1) as usize;
+    let iz = (((z - min.z) * inv_cell).floor() as i32).clamp(0, dims[2] - 1) as usize;
+    ix + iy * nx + iz * nx * dims[1] as usize
 }
 
 #[cfg(test)]
@@ -248,22 +280,25 @@ mod tests {
     #[test]
     fn grid_single_cell_and_neighbourhood() {
         let mut g = UniformGrid::default();
-        let min = Vec3::new(0.0,0.0,0.0);
-        let max = Vec3::new(1.0,1.0,1.0);
-        let px=[0.1,0.8,0.5]; let py=[0.1,0.8,0.5]; let pz=[0.1,0.8,0.5];
-        g.rebuild(min,max,0.5,3,&px,&py,&pz);
+        let min = Vec3::new(0.0, 0.0, 0.0);
+        let max = Vec3::new(1.0, 1.0, 1.0);
+        let px = [0.1, 0.8, 0.5];
+        let py = [0.1, 0.8, 0.5];
+        let pz = [0.1, 0.8, 0.5];
+        g.rebuild(min, max, 0.5, 3, &px, &py, &pz);
         // 2×2×2 = 8 cells expected.
         assert_eq!(g.cell_count(), 8);
-        let mut collected=Vec::new();
-        g.collect_neighbourhood(Vec3::new(0.1,0.1,0.1), &mut collected);
+        let mut collected = Vec::new();
+        g.collect_neighbourhood(Vec3::new(0.1, 0.1, 0.1), &mut collected);
         // With 27-cell neighbourhood covering the whole domain for these small dims, all particles reachable.
         assert!(collected.contains(&0));
         // Candidate pairs enumerates without duplicates.
-        let mut pairs=Vec::new();
-        g.for_each_candidate_pair(|a,b| pairs.push((a.min(b),a.max(b))));
-        if pairs.len()>0 {
-            let mut dedup=pairs.clone();
-            dedup.sort_unstable(); dedup.dedup();
+        let mut pairs = Vec::new();
+        g.for_each_candidate_pair(|a, b| pairs.push((a.min(b), a.max(b))));
+        if !pairs.is_empty() {
+            let mut dedup = pairs.clone();
+            dedup.sort_unstable();
+            dedup.dedup();
             assert_eq!(dedup.len(), pairs.len());
         }
     }

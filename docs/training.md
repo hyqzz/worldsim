@@ -70,20 +70,24 @@ print(json.dumps(result, indent=2))
 ```bash
 curl -s -X POST http://127.0.0.1:8090/v1/batch/create \
   -H 'Content-Type: application/json' \
-  -d '{"count":64,"template_config":{"quality":"low","dt":0.0166667},"name_prefix":"train"}'
+  -d '{"count":64,"template_config":{"quality":"low","dt":0.0166667,"auto_start":false},"name_prefix":"train"}'
 ```
 
-### Step batch (parallel)
+### Batch transition (one round-trip per RL step)
+
+```bash
+curl -s -X POST http://127.0.0.1:8090/v1/batch/transition \
+  -H 'Content-Type: application/json' \
+  -d '{"transitions":[{"id":"train-0000","events":[{"type":"apply_force","target":{"body":0},"force":[1,0,0]}]},{"id":"train-0001","events":[]}],"ticks_per_world":1}'
+```
+
+### Legacy batch steps (shared events)
 
 ```bash
 curl -s -X POST http://127.0.0.1:8090/v1/batch/step \
   -H 'Content-Type: application/json' \
-  -d '{"ids":["train-0000","train-0001"],"ticks_per_world":10}'
-```
+  -d '{"ids":["train-0000","train-0001"],"ticks_per_world":10,"include_observation":false}'
 
-### Inject batch
-
-```bash
 curl -s -X POST http://127.0.0.1:8090/v1/batch/inject \
   -H 'Content-Type: application/json' \
   -d '{"ids":["train-0000"],"events":[{"type":"spawn_fluid","center":[0,1,0],"radius":0.5}]}'
@@ -118,21 +122,28 @@ True segment-distance capsule geometry lands in v0.2 with the law registry.
 | Step per second (batch) | > 10000 | ✅ ~12000 |
 | HTTP overhead per batch call | < 3 ms | ✅ ~1.5 ms |
 
-## Observed Training Scalar
+## Synchronous contract
 
-The `WorldSimEnv` exposes a 5-dimensional observation vector:
+`WorldSimEnv` does not use the realtime scheduler. Worlds are created with
+`auto_start:false` and every `env.step(action)` is exactly one HTTP
+`POST /v1/worlds/:id/step {events:[action],ticks:1}` returning the
+post-step observation, so no tick is lost or delayed.
+
+## Observation space
+
+The current adapter exposes rigid/thermal state columnarly through
+`Client.decode_f64_array(observation["bodies"]["px"])`. The `Gymnasium`
+environment packs a fixed-shape summary `body_slots*6 + 1`:
 
 ```
-obs[0] = temperature at (0, 0.5, 0)       — K
-obs[1] = density at (0, 0.5, 0)           — kg/m³
-obs[2] = tick count                        — integer
-obs[3] = fluid particle count              — integer
-obs[4] = rigid body count                  — integer
+obs[i*6 + 0..2]  position x/y/z of body i
+obs[i*6 + 3..5]  velocity x/y/z of body i
+obs[-1]          mean temperature (K) at the heat grid
 ```
 
-Actions are 3D force vectors `[Fx, Fy, Fz]` applied to body 0.
-
-Reward: penalises deviation of temperature from 293 K (configurable).
+Actions are 3D force vectors `[Fx, Fy, Fz]` applied to body slot 0 (unit: N,
+`ticks:1`). The reward is zero by default; pass a task-specific
+`reward_fn(obs, action)` when constructing the environment.
 
 ## What's Next (v0.2)
 

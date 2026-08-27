@@ -50,24 +50,53 @@ class BatchTrainer:
         resp = self.client._request("POST", "/v1/batch/create", body)
         return resp.get("ids", [])
 
-    def step(self, ids: List[str], ticks_per_world: int = 1) -> List[Dict[str, Any]]:
-        """Step all worlds in parallel.
+    def step(
+        self,
+        ids: List[str],
+        ticks_per_world: int = 1,
+        include_observation: bool = True,
+        include_fluid: bool = False,
+        fluid_stride: int = 1,
+    ) -> List[Dict[str, Any]]:
+        """Step all worlds in parallel and optionally return observations.
 
-        Each world runs `ticks_per_world` ticks, all in parallel threads.
-        Returns per-world results: id, tick, time, hash, tick_ms, bodies, fluid.
+        Each world runs `ticks_per_world` synchronous ticks.  The returned
+        observation is post-step data, never a stale realtime snapshot.
+        Set ``include_observation=False`` for a pure throughput benchmark.
         """
         resp = self.client._request("POST", "/v1/batch/step", {
             "ids": ids,
             "ticks_per_world": ticks_per_world,
+            "include_observation": include_observation,
+            "include_fluid": include_fluid,
+            "fluid_stride": fluid_stride,
         })
         return resp.get("results", [])
 
     def inject(self, ids: List[str], events: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Inject events into all worlds."""
+        """Inject the same events into all worlds."""
         return self.client._request("POST", "/v1/batch/inject", {
             "ids": ids,
             "events": events,
         })
+
+    def transition(self, transitions: List[Dict[str, Any]], ticks_per_world: int = 1,
+                   include_observation: bool = True, include_fluid: bool = False,
+                   fluid_stride: int = 1) -> List[Dict[str, Any]]:
+        """Apply per-world events and advance all environments atomically.
+
+        ``transitions`` is ``[{"id": wid, "events": [...]}, ...]``. This is
+        the preferred vectorized RL call when each environment has a different
+        action.
+        """
+        response = self.client._request("POST", "/v1/batch/transition", {
+            "transitions": transitions,
+            "ticks_per_world": ticks_per_world,
+            "include_observation": include_observation,
+            "include_fluid": include_fluid,
+            "fluid_stride": fluid_stride,
+        })
+        return response.get("results", [])
 
     def benchmark(self, count: int = 64, ticks: int = 10, repeats: int = 5, config: Optional[Dict] = None) -> Dict[str, Any]:
         """Run a benchmark: create `count` worlds, step `ticks` for `repeats` iterations.
@@ -81,7 +110,7 @@ class BatchTrainer:
         all_ticks = ticks * repeats
         t0 = time.perf_counter()
         for _ in range(repeats):
-            self.step(ids, ticks_per_world=ticks)
+            self.step(ids, ticks_per_world=ticks, include_observation=False)
         wall_ms = (time.perf_counter() - t0) * 1000
         total_steps = count * all_ticks
         return {

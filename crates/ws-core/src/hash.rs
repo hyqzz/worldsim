@@ -47,6 +47,14 @@ impl StateHasher {
         self
     }
 
+    pub fn mix_bytes(&mut self, bytes: &[u8]) -> &mut Self {
+        for &byte in bytes {
+            self.0 ^= byte as u64;
+            self.0 = self.0.wrapping_mul(FNV_PRIME);
+        }
+        self
+    }
+
     pub fn mix_f64(&mut self, v: f64) -> &mut Self {
         mix_u64(&mut self.0, v.to_bits());
         self

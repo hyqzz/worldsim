@@ -10,6 +10,7 @@ cargo build -p worldsim --release
 
 # 2. 安装 Python SDK
 pip install -e sdk/python
+pip install -r demos/requirements.txt
 
 # 3. 生成所有 demo
 python demos/run_all.py
@@ -30,7 +31,8 @@ python demos/rigid_bodies.py
 | 7 | `batch_training.py` | 训练 | 64 个并行世界同时运行 | `output/batch_training.png` |
 | 8 | `qos_precision.py` | QoS | Low/Medium/High 精度对比 | `output/qos_precision.png` |
 | 9 | `wdl_scene.py` | WDL | 声明式场景描述 | `output/wdl_scene.png` |
-| 10 | `full_demo.py` | 全场景 | 水箱 + 球 + 热源 + 探针 | `output/full_demo.gif` |
+| 10 | `full_demo.py` | 全场景 | 水箱 + 球 + 热源 + 探针 | `output/full_demo.png` |
+| 11 | `three_d_scene.py` | **真正 3D** | x/y/z 状态列 + 3D 坐标轴 + 流体 | `output/three_d_scene.gif` |
 
 ## 自定义 Demo
 

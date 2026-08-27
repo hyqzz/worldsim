@@ -14,6 +14,7 @@ Demo 8: QoS 精度控制 — Low/Medium/High 对比
     python demos/qos_precision.py
 """
 import sys, os, json, time
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
 
 def run_demo(port=18099):
@@ -33,6 +34,7 @@ def run_demo(port=18099):
     for quality, label, color in levels:
         print(f"\n  Testing {label} quality...")
         w = c.create_world(name=f"qos_{quality}", config={
+            "auto_start": False,
             "quality": quality,
             "gravity": [0, -9.81, 0],
             "bounds": {"min": [-2, 0, -1], "max": [2, 4, 1]},
@@ -136,4 +138,7 @@ def run_demo(port=18099):
     plt.close(fig)
 
 if __name__ == "__main__":
-    run_demo()
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--port",type=int,default=18099)
+    run_demo(parser.parse_args().port)

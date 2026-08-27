@@ -1,13 +1,28 @@
 //! Embedded viewer assets — compiled into the server binary so `worldsim` is a single-file distribution.
 
-pub struct Asset { pub content_type: &'static str, pub body: &'static [u8] }
+pub struct Asset {
+    pub content_type: &'static str,
+    pub body: &'static [u8],
+}
 
-pub fn get(path: &str)->Option<Asset> {
+pub fn get(path: &str) -> Option<Asset> {
     match path {
-        "/" | "/viewer" | "/viewer/" | "/viewer/index.html" => Some(Asset{ content_type:"text/html; charset=utf-8", body: INDEX_HTML }),
-        "/viewer/app.js" => Some(Asset{ content_type:"text/javascript; charset=utf-8", body: APP_JS }),
-        "/viewer/style.css" => Some(Asset{ content_type:"text/css; charset=utf-8", body: STYLE_CSS }),
-        "/favicon.svg" => Some(Asset{ content_type:"image/svg+xml", body: FAVICON }),
+        "/" | "/viewer" | "/viewer/" | "/viewer/index.html" => Some(Asset {
+            content_type: "text/html; charset=utf-8",
+            body: INDEX_HTML,
+        }),
+        "/viewer/app.js" => Some(Asset {
+            content_type: "text/javascript; charset=utf-8",
+            body: APP_JS,
+        }),
+        "/viewer/style.css" => Some(Asset {
+            content_type: "text/css; charset=utf-8",
+            body: STYLE_CSS,
+        }),
+        "/favicon.svg" => Some(Asset {
+            content_type: "image/svg+xml",
+            body: FAVICON,
+        }),
         _ => None,
     }
 }

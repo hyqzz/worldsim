@@ -88,19 +88,41 @@ pub mod builtin {
 
     pub struct GravityLaw;
     impl ForceLaw for GravityLaw {
-        fn name(&self) -> &'static str { "gravity" }
-        fn domain(&self) -> ScaleDomain { ScaleDomain::Macroscopic }
-        fn cost(&self, n: usize) -> Cost { Cost { ns_per_element: 2.0, needs_neighbours: false } }
-        fn validate(&self) -> Result<(), String> { Ok(()) }
+        fn name(&self) -> &'static str {
+            "gravity"
+        }
+        fn domain(&self) -> ScaleDomain {
+            ScaleDomain::Macroscopic
+        }
+        fn cost(&self, _n: usize) -> Cost {
+            Cost {
+                ns_per_element: 2.0,
+                needs_neighbours: false,
+            }
+        }
+        fn validate(&self) -> Result<(), String> {
+            Ok(())
+        }
         fn apply(&self, _ctx: &mut ForceContext) {}
     }
 
     pub struct WcSphLaw;
     impl ForceLaw for WcSphLaw {
-        fn name(&self) -> &'static str { "wc-sph" }
-        fn domain(&self) -> ScaleDomain { ScaleDomain::Continuum }
-        fn cost(&self, n: usize) -> Cost { Cost { ns_per_element: 85.0 + (n as f64).log2() * 2.0, needs_neighbours: true } }
-        fn validate(&self) -> Result<(), String> { Ok(()) }
+        fn name(&self) -> &'static str {
+            "wc-sph"
+        }
+        fn domain(&self) -> ScaleDomain {
+            ScaleDomain::Continuum
+        }
+        fn cost(&self, n: usize) -> Cost {
+            Cost {
+                ns_per_element: 85.0 + (n as f64).log2() * 2.0,
+                needs_neighbours: true,
+            }
+        }
+        fn validate(&self) -> Result<(), String> {
+            Ok(())
+        }
         fn apply(&self, _ctx: &mut ForceContext) {}
     }
 }
@@ -113,11 +135,16 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn new() -> Self { Self::default() }
-    pub fn register_force(&mut self, law: Box<dyn ForceLaw>) { self.force_laws.push(law); }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn register_force(&mut self, law: Box<dyn ForceLaw>) {
+        self.force_laws.push(law);
+    }
     pub fn validate_all(&self) -> Result<(), String> {
         for law in &self.force_laws {
-            law.validate().map_err(|e| format!("{}: {}", law.name(), e))?;
+            law.validate()
+                .map_err(|e| format!("{}: {}", law.name(), e))?;
         }
         Ok(())
     }
@@ -125,8 +152,8 @@ impl Registry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::builtin::*;
+    use super::*;
     #[test]
     fn registry_validates_builtins() {
         let mut r = Registry::new();

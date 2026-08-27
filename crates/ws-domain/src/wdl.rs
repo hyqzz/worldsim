@@ -17,9 +17,9 @@
 //! v0.1 accepts strict JSON. Full YAML support lands in v0.2.
 //! JSON comments (`//`) are allowed and stripped by a lightweight pre-pass.
 
-use ws_core::json::Json;
 use crate::config::WorldConfig;
 use crate::events::SimEvent;
+use ws_core::json::Json;
 
 /// A parsed WDL document.
 #[derive(Debug, Clone)]
@@ -40,26 +40,51 @@ impl Wdl {
     pub fn from_json(v: &Json) -> Result<Self, String> {
         let world = v.get("world").unwrap_or(v);
         let cfg = WorldConfig::from_json(world.get("config").unwrap_or(world))?;
-        let name = world.get("name").and_then(|j| j.as_str()).map(|s| s.to_string())
-            .or_else(|| v.get("name").and_then(|j| j.as_str()).map(|s| s.to_string()));
+        let name = world
+            .get("name")
+            .and_then(|j| j.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                v.get("name")
+                    .and_then(|j| j.as_str())
+                    .map(|s| s.to_string())
+            });
         let mut events = Vec::new();
 
         if let Some(entities) = v.get("entities").and_then(|j| j.as_arr()) {
             for ent in entities {
                 if let Json::Obj(pairs) = ent {
                     for (key, val) in pairs {
-                        let mat = val.get("material").and_then(|j| j.as_str()).unwrap_or("steel");
-                        let at = val.get("at").and_then(|j| j.as_vec3()).unwrap_or(ws_core::math::Vec3::new(0.0, 2.0, 0.0));
-                        let vel = val.get("vel").and_then(|j| j.as_vec3()).unwrap_or(ws_core::math::Vec3::zero());
-                        let shape_str = val.get("shape").and_then(|j| j.as_str()).unwrap_or("sphere[r=0.14]");
+                        let mat = val
+                            .get("material")
+                            .and_then(|j| j.as_str())
+                            .unwrap_or("steel");
+                        let at = val
+                            .get("at")
+                            .and_then(|j| j.as_vec3())
+                            .unwrap_or(ws_core::math::Vec3::new(0.0, 2.0, 0.0));
+                        let vel = val
+                            .get("vel")
+                            .and_then(|j| j.as_vec3())
+                            .unwrap_or(ws_core::math::Vec3::zero());
+                        let shape_str = val
+                            .get("shape")
+                            .and_then(|j| j.as_str())
+                            .unwrap_or("sphere[r=0.14]");
                         if shape_str.contains("sphere") || mat != "water" {
                             let r = parse_radius(shape_str).unwrap_or(0.14);
                             events.push(SimEvent::SpawnSphere {
-                                material: mat.to_string(), pos: at, vel, radius: r,
+                                material: mat.to_string(),
+                                pos: at,
+                                vel,
+                                radius: r,
                             });
                         } else {
                             let r = parse_radius(shape_str).unwrap_or(0.5);
-                            events.push(SimEvent::SpawnFluidBlob { center: at, radius: r });
+                            events.push(SimEvent::SpawnFluidBlob {
+                                center: at,
+                                radius: r,
+                            });
                         }
                         let _ = key;
                     }
@@ -75,14 +100,20 @@ impl Wdl {
             }
         }
 
-        Ok(Self { config: cfg, name, events })
+        Ok(Self {
+            config: cfg,
+            name,
+            events,
+        })
     }
 }
 
 fn parse_radius(s: &str) -> Option<f64> {
     let start = s.find("r=")?;
-    let rest = &s[start+2..];
-    let end = rest.find(|c: char| !c.is_ascii_digit() && c!='.' && c!='-' && c!='e' && c!='E').unwrap_or(rest.len());
+    let rest = &s[start + 2..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != 'e' && c != 'E')
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -93,22 +124,35 @@ fn strip_comments(input: &str) -> String {
     let mut escape = false;
     let mut chars = input.chars();
     while let Some(c) = chars.next() {
-        if escape { out.push(c); escape = false; continue; }
+        if escape {
+            out.push(c);
+            escape = false;
+            continue;
+        }
         if in_string {
-            if c == '\\' { escape = true; }
-            if c == '"' { in_string = false; }
+            if c == '\\' {
+                escape = true;
+            }
+            if c == '"' {
+                in_string = false;
+            }
             out.push(c);
             continue;
         }
-        if c == '"' { in_string = true; out.push(c); continue; }
-        if c == '/' {
-            if chars.clone().next() == Some('/') {
-                // skip to end of line
-                while let Some(nc) = chars.next() {
-                    if nc == '\n' { out.push(nc); break; }
+        if c == '"' {
+            in_string = true;
+            out.push(c);
+            continue;
+        }
+        if c == '/' && chars.clone().next() == Some('/') {
+            // skip to end of line
+            for nc in chars.by_ref() {
+                if nc == '\n' {
+                    out.push(nc);
+                    break;
                 }
-                continue;
             }
+            continue;
         }
         out.push(c);
     }

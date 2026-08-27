@@ -31,11 +31,18 @@ def run_demo(port=18099):
 
     frames = []
     for step in range(300):
-        c.control(wid, "step")
+        payload = c.step_sync(wid, 1)["observation"]
         if step % 6 == 0:
-            pw = WorldPlotter(title=f"Buoyancy  t={step/60:.2f}s",
+            bodies=payload["bodies"]
+            px=c.decode_f64_array(bodies["px"]); py=c.decode_f64_array(bodies["py"])
+            radius=c.decode_f64_array(bodies["r"])
+            import base64
+            mat=np.frombuffer(base64.b64decode(bodies["mat_id"]),dtype=np.uint8)
+            pw = WorldPlotter(title=f"Buoyancy  t={payload['time']:.2f}s",
                               bounds=((-2, 0), (2, 4)))
             pw.ax.axhline(y=0, color="#2a3f6b", linewidth=2)
+            pw.ax.axhline(y=1.55, color="#4f7cff", linewidth=1, linestyle="--", alpha=.6)
+            pw.plot_bodies(px,py,radius,mat)
             pw.ax.text(0.02, 0.97,
                 "wood(700)→floats\nsteel(7850)→sinks\ncopper(8960)→sinks",
                 transform=pw.ax.transAxes, color="#8ea2c8", fontsize=9,

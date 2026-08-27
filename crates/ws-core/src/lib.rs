@@ -13,7 +13,7 @@
 //! ## Design rules
 //! 1. No third-party dependencies. Every algorithm here is auditable.
 //! 2. Deterministic across runs on the same platform: integer-only PRNG math,
-//!     bit-exact float serialization for state fingerprints.
+//!    bit-exact float serialization for state fingerprints.
 //! 3. SI units everywhere. No magic numbers outside [`constants`].
 
 pub mod base64;

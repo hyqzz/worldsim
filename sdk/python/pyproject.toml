@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "worldsim"
-version = "0.1.0"
+version = "0.1.2"
 description = "WorldSim — physics-world simulation infrastructure (Python SDK)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,6 +31,8 @@ Documentation = "https://github.com/hyqzz/worldsim#readme"
 Issues = "https://github.com/hyqzz/worldsim/issues"
 
 [project.optional-dependencies]
+# The base Client stays stdlib-only. Install this extra for RL environments.
+training = ["numpy>=1.23", "gymnasium>=0.29"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]

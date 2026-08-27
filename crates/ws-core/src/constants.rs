@@ -58,11 +58,13 @@ mod tests {
     #[test]
     fn derived_constants_are_consistent() {
         // ε₀ must satisfy the electromagnetic relation α = e²/(4πε₀ħc) ≈ 1/137.036
-        let alpha = E_CHARGE * E_CHARGE
-            / (4.0 * core::f64::consts::PI * EPSILON_0 * H_BAR * C);
+        let alpha = E_CHARGE * E_CHARGE / (4.0 * core::f64::consts::PI * EPSILON_0 * H_BAR * C);
         let expected = 1.0 / 137.035_999_084;
         let rel = ((alpha - expected) / expected).abs();
-        assert!(rel < 1e-9, "fine structure constant mismatch: {alpha} vs {expected}");
+        assert!(
+            rel < 1e-9,
+            "fine structure constant mismatch: {alpha} vs {expected}"
+        );
 
         assert!((STEFAN_BOLTZMANN - 5.670_374_419e-8).abs() < 1e-15);
         assert!((R_GAS - 8.314_462_618).abs() < 1e-8);

@@ -49,7 +49,11 @@ pub struct RigidCfg {
 
 impl Default for RigidCfg {
     fn default() -> Self {
-        Self { restitution: 0.6, friction: 0.35, substeps: 2 }
+        Self {
+            restitution: 0.6,
+            friction: 0.35,
+            substeps: 2,
+        }
     }
 }
 
@@ -72,7 +76,13 @@ impl Default for FluidCfg {
         // Water-like defaults tuned for interactive tank scenes:
         // c = 12 m/s gives Mach numbers ≪ 0.1 for typical flows while keeping
         // the CFL-limited dt affordable.
-        Self { enabled: true, h: 0.06, rho0: 1000.0, c: 12.0, visc_alpha: 0.08 }
+        Self {
+            enabled: true,
+            h: 0.06,
+            rho0: 1000.0,
+            c: 12.0,
+            visc_alpha: 0.08,
+        }
     }
 }
 
@@ -112,7 +122,10 @@ pub struct NBodyCfg {
 
 impl Default for NBodyCfg {
     fn default() -> Self {
-        Self { enabled: false, softening: 0.01 }
+        Self {
+            enabled: false,
+            softening: 0.01,
+        }
     }
 }
 
@@ -130,6 +143,10 @@ pub struct SystemsCfg {
 pub struct WorldConfig {
     /// Deterministic RNG master seed.
     pub seed: u64,
+    /// Start the realtime scheduler automatically. Set false for synchronous
+    /// control loops and RL environments; those worlds advance only when the
+    /// explicit step API is called.
+    pub auto_start: bool,
     /// Macro tick duration (s). Simulation advances in integer ticks.
     pub dt: f64,
     /// Simulated domain. With `container = true`, its boundary is a solid wall.
@@ -145,6 +162,7 @@ impl Default for WorldConfig {
     fn default() -> Self {
         Self {
             seed: 42,
+            auto_start: true,
             dt: 1.0 / 60.0,
             bounds: Aabb::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::new(2.0, 4.0, 2.0)),
             container: true,
@@ -166,8 +184,18 @@ impl WorldConfig {
         if v.is_null() {
             return Ok(cfg);
         }
-        if let Some(seed) = v.get("seed") {
-            cfg.seed = seed.as_u64().ok_or("config.seed must be an unsigned integer")?;
+        if let Some(seed_hex) = v.get("seed_hex").and_then(|j| j.as_str()) {
+            cfg.seed = u64::from_str_radix(seed_hex.trim_start_matches("0x"), 16)
+                .map_err(|e| format!("config.seed_hex must be hexadecimal: {e}"))?;
+        } else if let Some(seed) = v.get("seed") {
+            cfg.seed = seed
+                .as_u64()
+                .ok_or("config.seed must be an unsigned integer")?;
+        }
+        if let Some(auto_start) = v.get("auto_start") {
+            cfg.auto_start = auto_start
+                .as_bool()
+                .ok_or("config.auto_start must be a boolean")?;
         }
         if let Some(dt) = v.get("dt") {
             cfg.dt = dt
@@ -190,8 +218,7 @@ impl WorldConfig {
             cfg.bounds = Aabb::new(min, max);
         }
         if let Some(c) = v.get("container") {
-            cfg.container =
-                c.as_bool().ok_or("config.container must be a boolean")?;
+            cfg.container = c.as_bool().ok_or("config.container must be a boolean")?;
         }
         if let Some(g) = v.get("gravity") {
             cfg.gravity = g.as_vec3().ok_or("config.gravity must be [x,y,z]")?;
@@ -212,7 +239,11 @@ impl WorldConfig {
     pub fn to_json(&self) -> Json {
         let s = &self.systems;
         Json::obj(vec![
+            // Keep the numeric field for compatibility, but seed_hex is the
+            // authoritative representation because JSON numbers lose u64 bits above 2^53.
             ("seed", Json::num(self.seed as f64)),
+            ("seed_hex", Json::str(format!("{:016x}", self.seed))),
+            ("auto_start", Json::Bool(self.auto_start)),
             ("dt", Json::num(self.dt)),
             (
                 "bounds",
@@ -249,7 +280,12 @@ impl WorldConfig {
                         "heat",
                         Json::obj(vec![
                             ("enabled", Json::Bool(s.heat.enabled)),
-                            ("res", Json::arr(s.heat.res.iter().map(|&r| Json::num(r as f64)).collect())),
+                            (
+                                "res",
+                                Json::arr(
+                                    s.heat.res.iter().map(|&r| Json::num(r as f64)).collect(),
+                                ),
+                            ),
                             ("alpha", Json::num(s.heat.alpha)),
                             ("volumetric_capacity", Json::num(s.heat.volumetric_capacity)),
                         ]),
@@ -276,7 +312,9 @@ fn parse_systems(v: &Json, out: &mut SystemsCfg) -> Result<(), String> {
             out.rigid.friction = x.clamp(0.0, 2.0);
         }
         if let Some(x) = r.get("substeps") {
-            let v = x.as_u64().ok_or("systems.rigid.substeps must be an integer")?;
+            let v = x
+                .as_u64()
+                .ok_or("systems.rigid.substeps must be an integer")?;
             out.rigid.substeps = v.clamp(1, 16) as u32;
         }
     }
@@ -302,14 +340,16 @@ fn parse_systems(v: &Json, out: &mut SystemsCfg) -> Result<(), String> {
             out.heat.enabled = x;
         }
         if let Some(arr) = h.get("res") {
-            let items = arr.as_arr().filter(|a| a.len() == 3).ok_or("systems.heat.res must be [nx,ny,nz]")?;
+            let items = arr
+                .as_arr()
+                .filter(|a| a.len() == 3)
+                .ok_or("systems.heat.res must be [nx,ny,nz]")?;
             let mut res = [0u32; 3];
             for (dst, src) in res.iter_mut().zip(items) {
                 *dst = src
                     .as_u64()
                     .filter(|r| (4..=128).contains(r))
-                    .ok_or("systems.heat.res entries in 4..=128")?
-                    as u32;
+                    .ok_or("systems.heat.res entries in 4..=128")? as u32;
             }
             out.heat.res = res;
         }
@@ -334,14 +374,20 @@ fn parse_systems(v: &Json, out: &mut SystemsCfg) -> Result<(), String> {
 fn num_field(v: &Json, key: &str) -> Result<Option<f64>, String> {
     match v.get(key) {
         None => Ok(None),
-        Some(j) => j.as_f64().map(Some).ok_or(format!("{key} must be a number")),
+        Some(j) => j
+            .as_f64()
+            .map(Some)
+            .ok_or(format!("{key} must be a number")),
     }
 }
 
 fn bool_field(v: &Json, key: &str) -> Result<Option<bool>, String> {
     match v.get(key) {
         None => Ok(None),
-        Some(j) => j.as_bool().map(Some).ok_or(format!("{key} must be a boolean")),
+        Some(j) => j
+            .as_bool()
+            .map(Some)
+            .ok_or(format!("{key} must be a boolean")),
     }
 }
 
@@ -350,7 +396,9 @@ fn vec3_json(p: Vec3) -> Json {
 }
 
 /// Public helper re-exported for the `events` module and other consumers.
-pub fn vec3_json_pub(p: Vec3) -> Json { vec3_json(p) }
+pub fn vec3_json_pub(p: Vec3) -> Json {
+    vec3_json(p)
+}
 
 #[cfg(test)]
 mod tests {
@@ -384,6 +432,23 @@ mod tests {
             &Json::parse(r#"{"bounds":{"min":[0,0,0],"max":[0,5,5]}}"#).unwrap()
         )
         .is_err());
+    }
+
+    #[test]
+    fn u64_seed_hex_is_lossless() {
+        let seed = 0xffff_ffff_ffff_ffffu64;
+        let cfg = WorldConfig {
+            seed,
+            ..WorldConfig::default()
+        };
+        let restored = WorldConfig::from_json(&cfg.to_json()).unwrap();
+        assert_eq!(restored.seed, seed);
+    }
+
+    #[test]
+    fn auto_start_is_roundtrippable() {
+        let v = Json::parse(r#"{"auto_start":false}"#).unwrap();
+        assert!(!WorldConfig::from_json(&v).unwrap().auto_start);
     }
 
     #[test]

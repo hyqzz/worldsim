@@ -20,7 +20,7 @@
 ```bash
 git clone https://github.com/hyqzz/worldsim && cd worldsim
 cargo run -p worldsim -- demo --port 8090
-# 浏览器打开 http://127.0.0.1:8090/viewer/
+# 浏览器打开 http://127.0.0.1:8090/viewer/  — WebGL2 真 3D，3 组坐标集
 ```
 
 ```bash
@@ -49,7 +49,7 @@ for frame in c.watch(wid, max_frames=1):
 ### 验证
 
 ```bash
-cargo test --workspace   # 40 项测试，含 7 个解析解验证
+cargo test --workspace   # 59 项测试，含 7 个解析解验证 + API 合约
 ```
 
 见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [SECURITY.md](SECURITY.md)。
